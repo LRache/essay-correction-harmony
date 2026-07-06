@@ -1,0 +1,29 @@
+# Essay Correction Backend
+
+FastAPI backend for the Harmony Chinese essay correction prototype.
+
+## Run
+
+```bash
+uv sync --extra dev
+uv run uvicorn app.main:app --reload
+```
+
+Default seed accounts:
+
+- Student: `student@example.com` / `student123`
+- Teacher: `teacher@example.com` / `teacher123`
+
+## AI Provider Configuration
+
+The default provider is deterministic mock analysis. Future LLM or model services can be selected with environment variables:
+
+```bash
+AI_PROVIDER=openai-compatible
+AI_BASE_URL=https://api.example.com/v1
+AI_API_KEY=...
+AI_MODEL=...
+```
+
+If the LLM response fails schema validation, the backend falls back to the rule/mock provider and records provider errors in the report metadata.
+
