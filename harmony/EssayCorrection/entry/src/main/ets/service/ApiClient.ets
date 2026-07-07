@@ -1,6 +1,7 @@
 import http from '@ohos.net.http';
 import {
   AnalysisJobOut,
+  AnalysisJobCreatePayload,
   AnalysisReport,
   EssayCreatePayload,
   EssayOut,
@@ -16,7 +17,7 @@ import {
 } from '../model/ApiModels';
 
 export class ApiClient {
-  static baseUrl: string = 'http://192.168.10.26:8000';
+  static baseUrl: string = 'http://192.168.31.152:8000';
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
@@ -81,8 +82,9 @@ export class ApiClient {
     return next;
   }
 
-  static async analyzeEssay(essayId: string): Promise<AnalysisJobOut> {
-    const raw: string = await ApiClient.request(`/essays/${essayId}/analysis-jobs`, http.RequestMethod.POST, undefined, ApiClient.authToken);
+  static async analyzeEssay(essayId: string, provider: string): Promise<AnalysisJobOut> {
+    const payload: AnalysisJobCreatePayload = AnalysisJobCreatePayload.create(provider);
+    const raw: string = await ApiClient.request(`/essays/${essayId}/analysis-jobs`, http.RequestMethod.POST, payload, ApiClient.authToken);
     return JSON.parse(raw) as AnalysisJobOut;
   }
 
@@ -152,8 +154,10 @@ export class ApiClient {
       method: method,
       header: headers,
       expectDataType: http.HttpDataType.STRING,
-      readTimeout: 5000,
-      connectTimeout: 5000,
+      // Real LLM correction is synchronous on the backend and commonly takes
+      // longer than a normal CRUD request.
+      readTimeout: 60000,
+      connectTimeout: 10000,
       usingCache: false
     };
     if (body !== undefined) {

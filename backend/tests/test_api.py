@@ -21,19 +21,6 @@ def make_client(tmp_path: Path) -> TestClient:
     return TestClient(create_app(settings))
 
 
-def make_ai_model_mock_client(tmp_path: Path) -> TestClient:
-    settings = Settings(
-        database_path=str(tmp_path / "test.db"),
-        jwt_secret="test-secret",
-        token_ttl_seconds=3600,
-        ai_provider="llm",
-        ai_base_url="",
-        ai_api_key="",
-        ai_model="demo-model",
-    )
-    return TestClient(create_app(settings))
-
-
 def login(client: TestClient, username: str, password: str) -> str:
     response = client.post("/auth/login", json={"username": username, "password": password})
     assert response.status_code == 200
@@ -60,9 +47,12 @@ def test_student_submit_analyze_and_teacher_review(tmp_path: Path) -> None:
     job_response = client.post(
         f"/essays/{essay_id}/analysis-jobs",
         headers={"Authorization": f"Bearer {student_token}"},
+        json={"provider": "mock"},
     )
     assert job_response.status_code == 200
     assert job_response.json()["status"] == "completed"
+    assert job_response.json()["provider"] == "mock"
+    assert job_response.json()["model"] == "mock-v1"
 
     report_response = client.get(
         f"/essays/{essay_id}/report",
@@ -181,46 +171,3 @@ def test_teacher_can_create_prompt_and_student_reports_group_by_prompt(tmp_path:
     overview = overview_response.json()[0]
     assert overview["prompt_id"] == writing_prompt["id"]
     assert overview["prompt_title"] == "校园里的温暖"
-
-
-def test_llm_provider_returns_prompt_mock_report(tmp_path: Path) -> None:
-    client = make_ai_model_mock_client(tmp_path)
-    student_token = login(client, "student@example.com", "student123")
-    headers = {"Authorization": f"Bearer {student_token}"}
-
-    essay_response = client.post(
-        "/essays",
-        headers=headers,
-        json={
-            "title": "夏天的雨",
-            "prompt": "请写一篇关于夏天雨景的作文。",
-            "content": "夏天的雨来得很快，我站在窗边观察街道，也想起自己应该认真生活。",
-        },
-    )
-    assert essay_response.status_code == 200
-    essay_id = essay_response.json()["id"]
-
-    job_response = client.post(f"/essays/{essay_id}/analysis-jobs", headers=headers)
-    assert job_response.status_code == 200
-    assert job_response.json()["status"] == "completed"
-
-    report_response = client.get(f"/essays/{essay_id}/report", headers=headers)
-    assert report_response.status_code == 200
-    report = report_response.json()
-    assert report["provider"]["provider"] == "ai-model-mock"
-    assert report["provider"]["model"] == "demo-model"
-    assert 60 <= report["total_score"] <= 100
-    assert report["examples"][0]["content"] == "夏天的雨的范文"
-    assert report["dimensions"][0]["comment"] == "夏天的雨的评语"
-    assert report["grammar_issues"][0]["message"] == "夏天的雨的语法问题"
-    assert report["grammar_issues"][0]["suggestion"] == "夏天的雨的语法建议"
-    assert report["suggestions"][0]["original"] == "夏天的雨的原文片段"
-    assert report["suggestions"][0]["rewrite"] == "夏天的雨的改写建议"
-    assert report["suggestions"][0]["rationale"] == "夏天的雨的改写说明"
-    assert report["materials"][0]["material"] == "夏天的雨的素材建议"
-    assert report["materials"][0]["usage_tip"] == "夏天的雨的素材使用建议"
-
-    examples_response = client.get("/examples", headers=headers)
-    assert examples_response.status_code == 200
-    examples = examples_response.json()
-    assert any(example["content"] == "夏天的雨的范文" for example in examples)

@@ -14,19 +14,35 @@ class Settings:
     ai_base_url: str
     ai_api_key: str
     ai_model: str
-    ai_model_configured: bool = False
+
+
+def _load_local_env(path: Path) -> None:
+    """Load simple KEY=VALUE entries without overriding process variables."""
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if value[:1] == value[-1:] and value.startswith(("\"", "'")):
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)
 
 
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[1]
+    _load_local_env(backend_root / ".env")
     default_db = backend_root / "data" / "app.db"
     return Settings(
         database_path=os.getenv("ESSAY_DB_PATH", str(default_db)),
         jwt_secret=os.getenv("APP_JWT_SECRET", "dev-secret-change-me"),
         token_ttl_seconds=int(os.getenv("APP_TOKEN_TTL_SECONDS", "86400")),
-        ai_provider=os.getenv("AI_PROVIDER", "llm"),
+        ai_provider=os.getenv("AI_PROVIDER", "mock"),
         ai_base_url=os.getenv("AI_BASE_URL", ""),
         ai_api_key=os.getenv("AI_API_KEY", ""),
-        ai_model=os.getenv("AI_MODEL", "demo-model"),
-        ai_model_configured="AI_MODEL" in os.environ,
+        ai_model=os.getenv("AI_MODEL", "mock-v1"),
     )

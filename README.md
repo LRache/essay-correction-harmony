@@ -19,14 +19,16 @@ UV_CACHE_DIR="$PWD/.cache/uv" uv run uvicorn app.main:app --host 127.0.0.1 --por
 - 学生：`student@example.com` / `student123`
 - 教师：`teacher@example.com` / `teacher123`
 
-AI 接入预留环境变量。当前默认使用 LLM mock 报告，也可以显式配置模型名：
+AI 接入预留环境变量：
 
 ```bash
-AI_PROVIDER=llm
-AI_MODEL=demo-model
+AI_PROVIDER=openai-compatible
+AI_BASE_URL=https://api.example.com/v1
+AI_API_KEY=...
+AI_MODEL=...
 ```
 
-LLM mock 报告会生成随机评分，范文、评语、语法问题、改写建议、素材建议等字段都会按作文题目生成对应 mock 文案。分析完成后生成的范文会写入范文库，并在 App 的“范文” tab 中显示。需要旧版规则模板时设置 `AI_PROVIDER=mock`。
+未配置 AI 时默认使用 deterministic mock + 轻量规则分析。
 
 ## Harmony
 

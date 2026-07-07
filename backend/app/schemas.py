@@ -142,6 +142,10 @@ class ReportOverview(BaseModel):
     latency_ms: int
 
 
+class AnalysisJobCreate(BaseModel):
+    provider: Literal["mock", "openai-compatible"] = "openai-compatible"
+
+
 class AnalysisJobOut(BaseModel):
     id: str
     essay_id: str

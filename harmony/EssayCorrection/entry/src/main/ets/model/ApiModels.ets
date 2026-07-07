@@ -163,6 +163,16 @@ export class AnalysisJobOut {
   }
 }
 
+export class AnalysisJobCreatePayload {
+  provider: string = 'openai-compatible';
+
+  static create(provider: string): AnalysisJobCreatePayload {
+    const payload = new AnalysisJobCreatePayload();
+    payload.provider = provider;
+    return payload;
+  }
+}
+
 export class GrammarIssue {
   id: string = '';
   start: number = 0;

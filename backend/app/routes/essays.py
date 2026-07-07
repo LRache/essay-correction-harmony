@@ -4,10 +4,10 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from ..analysis import AnalysisProvider
+from ..analysis import AnalysisProvider, build_provider
 from ..db import Database, utc_now
 from ..dependencies import current_user, get_db
-from ..schemas import AnalysisJobOut, AnalysisReport, EssayCreate, EssayOut, ExampleOut, ReportOverview, UserOut, WritingPromptOut
+from ..schemas import AnalysisJobCreate, AnalysisJobOut, AnalysisReport, EssayCreate, EssayOut, ExampleOut, ReportOverview, UserOut, WritingPromptOut
 from ..serializers import essay_from_row, example_from_row, job_from_row, writing_prompt_from_row
 
 router = APIRouter(tags=["essays"])
@@ -21,24 +21,6 @@ def _load_essay_or_404(db: Database, essay_id: str, user: UserOut) -> EssayOut:
     if user.role != "teacher" and essay.student_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Essay is not visible to this user")
     return essay
-
-
-def _save_generated_examples(db: Database, report: AnalysisReport) -> None:
-    for example in report.examples:
-        db.execute(
-            """
-            INSERT OR REPLACE INTO examples(id, title, prompt, content, theme, highlights_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                example.id,
-                example.title,
-                example.prompt,
-                example.content,
-                example.theme,
-                json.dumps(example.highlights, ensure_ascii=False),
-            ),
-        )
 
 
 @router.post("/essays", response_model=EssayOut)
@@ -92,11 +74,15 @@ def list_writing_prompts(
 def create_analysis_job(
     essay_id: str,
     request: Request,
+    payload: AnalysisJobCreate | None = None,
     db: Database = Depends(get_db),
     user: UserOut = Depends(current_user),
 ) -> AnalysisJobOut:
     essay = _load_essay_or_404(db, essay_id, user)
-    provider: AnalysisProvider = request.app.state.analysis_provider
+    settings = request.app.state.settings
+    requested_provider = payload.provider if payload is not None else settings.ai_provider
+    requested_model = "mock-v1" if requested_provider == "mock" else settings.ai_model
+    provider: AnalysisProvider = build_provider(settings, requested_provider)
     started_at = utc_now()
     job_id = db.new_id()
     db.execute(
@@ -104,7 +90,7 @@ def create_analysis_job(
         INSERT INTO analysis_jobs(id, essay_id, status, provider, model, started_at, latency_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (job_id, essay_id, "running", request.app.state.settings.ai_provider, request.app.state.settings.ai_model, started_at, 0),
+        (job_id, essay_id, "running", requested_provider, requested_model, started_at, 0),
     )
 
     examples = [example_from_row(row) for row in db.all("SELECT * FROM examples ORDER BY theme, title LIMIT 2")]
@@ -126,7 +112,6 @@ def create_analysis_job(
             """,
             (db.new_id(), essay_id, job_id, report.model_dump_json(), finished_at),
         )
-        _save_generated_examples(db, report)
         db.execute("UPDATE essays SET status = ?, updated_at = ? WHERE id = ?", ("analyzed", finished_at, essay_id))
     except Exception as exc:
         finished_at = utc_now()
