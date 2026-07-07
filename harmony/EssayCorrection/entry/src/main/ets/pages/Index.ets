@@ -15,6 +15,9 @@ import {
 } from '../model/ApiModels';
 import { ApiClient } from '../service/ApiClient';
 
+const API_TEST_PROMPT: string = '请以“那盏一直亮着的灯”为题，写一篇不少于600字的记叙文。要求内容具体，感情真挚，通过细节描写表现人物品质。';
+const API_TEST_ESSAY: string = '那盏一直亮着的灯\n夜已经很深了，窗外的雨丝被风吹得斜斜的。我坐在书桌前，盯着摊开的数学试卷，最后一道题像一堵墙，挡在我面前。台灯把我的影子拉得很长，客厅里却还亮着一盏暖黄色的小灯。\n那是父亲为我留的灯。父亲是一名维修工，每天早出晚归，手指上总带着洗不掉的机油印。那天他刚加班回来，鞋边沾满泥水，眼睛里布着红血丝。他看见我抓着头发发愁，没有催我睡觉，只轻声问：“还差多少？”我没好气地说：“这题太难了，你也不会。”话一出口，我便有些后悔。父亲没有生气，只是笑了笑，转身走进客厅。\n过了一会儿，一杯热牛奶放在我的手边。父亲坐到旧沙发上，拿出维修手册慢慢翻看。客厅的小灯照着他微微弯下的背，也照着他指缝里的黑色油迹。雨点敲打玻璃，屋里安静得只剩纸页翻动的声音。我几次抬头，他都还在那里。\n我重新读题，把条件一条条写下来。思路中断时，我想起父亲修理机器的样子：先检查线路，再寻找故障，从不因为一次失败就摔下工具。我擦掉混乱的算式，从最简单的一步重新开始。半小时后，那道题终于有了答案。我抬起头，父亲已经靠在沙发上睡着了，维修手册还摊在膝头。那盏灯依旧亮着，柔和的光落在他疲惫的脸上。\n我轻轻走过去，拿来一条毯子盖在他身上。父亲醒了醒，第一句话却是：“做出来了吗？”我点点头。他笑着说：“遇到难处别急，一点一点来，总能找到办法。”\n后来，我遇到过许多比那道题更难的事情。每当想要放弃时，我都会想起那个雨夜，想起父亲沉默的陪伴。客厅里的灯并不明亮，却让我懂得：真正的关心未必是响亮的鼓励，也可以是一杯热牛奶、一次安静的等待，以及疲惫时仍为你亮着的一束光。';
+
 @Entry
 @Component
 struct Index {
@@ -29,10 +32,11 @@ struct Index {
   @State username: string = 'student@example.com';
   @State password: string = 'student123';
   @State statusText: string = '请先登录';
-  @State titleText: string = '一次选择';
-  @State promptText: string = '请以成长中的一次选择为题写一篇作文。';
-  @State essayText: string = '那天我做出一个重要的的选择。首先我很犹豫，后来我明白成长需要承担责任。';
-  @State essay: EssayOut = EssayOut.demo();
+  @State isAnalyzing: boolean = false;
+  @State titleText: string = '';
+  @State promptText: string = '';
+  @State essayText: string = '';
+  @State essay: EssayOut = new EssayOut();
   @State report: AnalysisReport = AnalysisReport.demo();
   @State reportOverviews: ReportOverview[] = [];
   @State reportGroups: ReportPromptGroup[] = [];
@@ -277,11 +281,7 @@ struct Index {
   @Builder
   StudentPanel() {
     Column() {
-      if (this.isStudentWritingVisible) {
-        this.StudentWritingPanel()
-      } else {
-        this.StudentPromptListPanel()
-      }
+      this.StudentWritingPanel()
     }
     .width('100%')
     .height('100%')
@@ -314,37 +314,67 @@ struct Index {
   StudentWritingPanel() {
     Scroll() {
       Column({ space: 12 }) {
-        Row({ space: 10 }) {
-          Button('<')
-            .width(40)
-            .height(32)
-            .fontSize(18)
-            .backgroundColor('#E2E8F0')
-            .fontColor('#334155')
-            .onClick(() => {
-              this.isStudentWritingVisible = false;
-            })
-          Text('写作文')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#162033')
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
+        Text('提交作文')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#162033')
+          .width('100%')
+          .textAlign(TextAlign.Start)
 
-        this.SelectedPromptCard(this.selectedPrompt)
-        TextInput({ placeholder: '作文正文', text: this.essayText })
+        Text('作文要求')
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#334155')
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        TextArea({ placeholder: '请输入作文题目、写作主题或具体要求', text: this.promptText })
+          .onChange((value: string) => {
+            this.promptText = value;
+          })
+          .width('100%')
+          .height(100)
+          .backgroundColor('#FFFFFF')
+
+        Text('作文正文')
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#334155')
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        TextArea({ placeholder: '请输入需要批改的作文正文', text: this.essayText })
           .onChange((value: string) => {
             this.essayText = value;
           })
           .width('100%')
-          .height(120)
+          .height(260)
+          .backgroundColor('#FFFFFF')
 
         Row({ space: 8 }) {
-          Button('提交并批改')
+          Button('项目模型测试')
+            .width('49%')
+            .backgroundColor('#64748B')
+            .fontColor('#FFFFFF')
+            .enabled(!this.isAnalyzing)
+            .onClick(() => {
+              this.runApiTest('mock');
+            })
+          Button('Moonshot 测试')
+            .width('49%')
+            .backgroundColor('#2563EB')
+            .fontColor('#FFFFFF')
+            .enabled(!this.isAnalyzing)
+            .onClick(() => {
+              this.runApiTest('openai-compatible');
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Button(this.isAnalyzing ? '正在批改...' : '提交并用 Moonshot 批改')
             .width('64%')
             .backgroundColor('#1E6B5C')
             .fontColor('#FFFFFF')
+            .enabled(!this.isAnalyzing)
             .onClick(() => {
               this.submitAndAnalyze();
             })
@@ -358,7 +388,6 @@ struct Index {
         }
         .width('100%')
 
-        this.EssayCard(this.essay)
       }
       .width('100%')
       .padding(18)
@@ -767,7 +796,7 @@ struct Index {
       }
       .width('100%')
 
-      Text(`模型：${item.provider} · ${item.latency_ms}ms`)
+      Text(`批改服务：${item.provider} · ${item.latency_ms}ms`)
         .fontSize(12)
         .fontColor('#475569')
     }
@@ -991,7 +1020,6 @@ struct Index {
         this.isReportDetailVisible = false;
         this.reportOverviews = [];
         this.reportGroups = [];
-        this.loadWritingPrompts();
         this.loadReportOverviews();
         this.loadExamples();
       }
@@ -1026,26 +1054,51 @@ struct Index {
   }
 
   private async submitAndAnalyze(): Promise<void> {
-    if (this.selectedPrompt.id.length === 0) {
-      this.statusText = '请先选择题目';
+    await this.submitContentForAnalysis(this.promptText, this.essayText, 'openai-compatible');
+  }
+
+  private async runApiTest(provider: string): Promise<void> {
+    this.promptText = API_TEST_PROMPT;
+    this.essayText = API_TEST_ESSAY;
+    const providerLabel: string = provider === 'mock' ? '项目自带模型' : 'Moonshot 模型';
+    this.statusText = `正在使用${providerLabel}批改测试作文...`;
+    await this.submitContentForAnalysis(API_TEST_PROMPT, API_TEST_ESSAY, provider);
+  }
+
+  private async submitContentForAnalysis(promptText: string, essayText: string, provider: string): Promise<void> {
+    if (this.isAnalyzing) {
+      this.statusText = '已有批改任务正在进行，请稍候';
       return;
     }
+    const normalizedPrompt: string = promptText.trim();
+    const normalizedEssay: string = essayText.trim();
+    if (normalizedPrompt.length === 0) {
+      this.statusText = '请输入作文要求';
+      return;
+    }
+    if (normalizedEssay.length === 0) {
+      this.statusText = '请输入需要批改的作文';
+      return;
+    }
+    this.isAnalyzing = true;
     try {
       this.statusText = '正在提交作文...';
-      const created: EssayOut = await ApiClient.submitEssay(this.selectedPrompt.id, this.selectedPrompt.title, this.selectedPrompt.prompt, this.essayText);
+      const generatedTitle: string = normalizedPrompt.length > 18 ? `${normalizedPrompt.substring(0, 18)}…` : normalizedPrompt;
+      const created: EssayOut = await ApiClient.submitEssay('', generatedTitle, normalizedPrompt, normalizedEssay);
       this.essay = created;
       this.statusText = '正在生成批改报告...';
-      await ApiClient.analyzeEssay(created.id);
+      await ApiClient.analyzeEssay(created.id, provider);
       this.report = await ApiClient.getReport(created.id);
       this.essay.status = 'analyzed';
       this.upsertReportOverview(this.report);
-      this.isStudentWritingVisible = false;
       this.isReportDetailVisible = false;
       this.skipNextReportRefresh = true;
       this.statusText = '批改完成，已加入报告概览';
       this.navigateToTab(1);
     } catch (e) {
       this.handleRequestFailure();
+    } finally {
+      this.isAnalyzing = false;
     }
   }
 

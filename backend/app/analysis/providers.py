@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import random
 import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ..config import Settings
 from ..schemas import (
@@ -27,6 +26,19 @@ class AnalysisProvider(ABC):
     @abstractmethod
     def analyze(self, essay_id: str, title: str, prompt: str, content: str, examples: list[ExampleOut]) -> AnalysisReport:
         raise NotImplementedError
+
+
+class LLMCorrectionResult(BaseModel):
+    """Only fields that the external model is responsible for generating."""
+
+    grammar_issues: list[GrammarIssue]
+    coherence: SemanticMetric
+    relevance: SemanticMetric
+    total_score: float
+    max_score: float
+    dimensions: list[ScoreDimension]
+    suggestions: list[RewriteSuggestion]
+    materials: list[MaterialSuggestion]
 
 
 class MockRuleProvider(AnalysisProvider):
@@ -232,123 +244,70 @@ class OpenAICompatibleProvider(AnalysisProvider):
             )
             with urllib.request.urlopen(request, timeout=20) as response:
                 response_data = json.loads(response.read().decode("utf-8"))
-            content_json = response_data["choices"][0]["message"]["content"]
+            content_json = response_data["choices"][0]["message"]["content"].strip()
+            if content_json.startswith("```"):
+                content_json = content_json.split("\n", 1)[-1]
+                content_json = content_json.rsplit("```", 1)[0].strip()
             candidate = json.loads(content_json)
-            report = AnalysisReport.model_validate(candidate)
-            report.provider.provider = "openai-compatible"
-            report.provider.model = self.settings.ai_model
+            correction = LLMCorrectionResult.model_validate(candidate)
+            # Identity, local examples, and provider metadata are authoritative
+            # backend data rather than fields the model should invent.
+            report = AnalysisReport(
+                essay_id=essay_id,
+                title=title,
+                prompt=prompt,
+                grammar_issues=correction.grammar_issues,
+                coherence=correction.coherence,
+                relevance=correction.relevance,
+                total_score=correction.total_score,
+                max_score=correction.max_score,
+                dimensions=correction.dimensions,
+                suggestions=correction.suggestions,
+                materials=correction.materials,
+                examples=examples[:2],
+                provider=ProviderMeta(
+                    provider="openai-compatible",
+                    model=self.settings.ai_model,
+                    version="chat-completions-v1",
+                    latency_ms=0,
+                    fallback_used=False,
+                    errors=[],
+                ),
+            )
             report.provider.latency_ms = int((time.perf_counter() - started) * 1000)
             return report
         except (KeyError, ValueError, urllib.error.URLError, TimeoutError, ValidationError) as exc:
             report = self.fallback.analyze(essay_id, title, prompt, content, examples)
+            report.provider.latency_ms = int((time.perf_counter() - started) * 1000)
             report.provider.fallback_used = True
             report.provider.errors.append(f"LLM schema validation or request failed: {exc}")
             return report
 
     def _request_payload(self, title: str, prompt: str, content: str) -> dict[str, Any]:
-        schema_hint = (
-            "Return JSON matching fields: essay_id,title,prompt,grammar_issues,coherence,"
-            "relevance,total_score,max_score,dimensions,suggestions,materials,examples,provider."
-        )
+        schema_hint = json.dumps(LLMCorrectionResult.model_json_schema(), ensure_ascii=False)
         return {
             "model": self.settings.ai_model,
             "messages": [
-                {"role": "system", "content": f"You are a Chinese essay correction engine. {schema_hint}"},
+                {
+                    "role": "system",
+                    "content": (
+                        "你是中文作文批改引擎。只返回一个完整、合法的 JSON 对象，不要使用 Markdown，"
+                        "不要输出 schema 中没有的字段。即使没有语病，也要返回空数组。总分与各维度"
+                        "分数必须一致，语病位置必须对应作文中的字符下标。严格遵循此 JSON Schema："
+                        f"{schema_hint}"
+                    ),
+                },
                 {"role": "user", "content": f"题目：{title}\n要求：{prompt}\n作文：{content}"},
             ],
             "temperature": 0.2,
+            "max_tokens": 3000,
             "response_format": {"type": "json_object"},
         }
 
 
-class AIModelMockProvider(AnalysisProvider):
-    version = "ai-model-mock-2026-07-07"
-
-    def __init__(self, model: str):
-        self.model = model
-
-    def analyze(self, essay_id: str, title: str, prompt: str, content: str, examples: list[ExampleOut]) -> AnalysisReport:
-        started = time.perf_counter()
-        total_score = random.randint(60, 100)
-        score_parts = [
-            ("内容充实", round(total_score * 0.30, 1), 30),
-            ("结构连贯", round(total_score * 0.25, 1), 25),
-            ("主题相关", round(total_score * 0.25, 1), 25),
-            ("语言表达", round(total_score * 0.20, 1), 20),
-        ]
-        comment = f"{title}的评语"
-        grammar_message = f"{title}的语法问题"
-        grammar_suggestion = f"{title}的语法建议"
-        rewrite_original = f"{title}的原文片段"
-        rewrite = f"{title}的改写建议"
-        rewrite_rationale = f"{title}的改写说明"
-        material = f"{title}的素材建议"
-        usage_tip = f"{title}的素材使用建议"
-        issue_end = min(max(len(title), 1), len(content))
-        example = ExampleOut(
-            id=f"mock-example-{essay_id}",
-            title=f"{title}范文",
-            prompt=prompt,
-            content=f"{title}的范文",
-            theme=title,
-            highlights=[comment],
-        )
-        latency_ms = int((time.perf_counter() - started) * 1000)
-
-        return AnalysisReport(
-            essay_id=essay_id,
-            title=title,
-            prompt=prompt,
-            grammar_issues=[
-                GrammarIssue(
-                    id="mock-grammar",
-                    start=0,
-                    end=issue_end,
-                    issue_type="mock_grammar",
-                    severity="medium",
-                    message=grammar_message,
-                    suggestion=grammar_suggestion,
-                )
-            ],
-            coherence=SemanticMetric(score=float(total_score), summary=comment, evidence=[comment]),
-            relevance=SemanticMetric(score=float(total_score), summary=comment, evidence=[comment]),
-            total_score=float(total_score),
-            max_score=100,
-            dimensions=[
-                ScoreDimension(name=name, score=score, max_score=max_score, comment=comment)
-                for name, score, max_score in score_parts
-            ],
-            suggestions=[
-                RewriteSuggestion(
-                    issue_id="mock-grammar",
-                    original=rewrite_original,
-                    rewrite=rewrite,
-                    rationale=rewrite_rationale,
-                )
-            ],
-            materials=[
-                MaterialSuggestion(
-                    theme=title,
-                    material=material,
-                    usage_tip=usage_tip,
-                )
-            ],
-            examples=[example],
-            provider=ProviderMeta(
-                provider="ai-model-mock",
-                model=self.model,
-                version=AIModelMockProvider.version,
-                latency_ms=latency_ms,
-                fallback_used=False,
-                errors=[],
-            ),
-        )
-
-
-def build_provider(settings: Settings) -> AnalysisProvider:
-    if settings.ai_provider == "llm" or settings.ai_provider == "ai-model-mock" or settings.ai_model_configured:
-        return AIModelMockProvider(model=settings.ai_model)
-    fallback = MockRuleProvider(model=settings.ai_model)
-    if settings.ai_provider == "openai-compatible":
+def build_provider(settings: Settings, provider_name: str | None = None) -> AnalysisProvider:
+    fallback = MockRuleProvider()
+    selected_provider = provider_name or settings.ai_provider
+    if selected_provider == "openai-compatible":
         return OpenAICompatibleProvider(settings=settings, fallback=fallback)
     return fallback

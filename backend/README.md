@@ -16,11 +16,17 @@ Default seed accounts:
 
 ## AI Provider Configuration
 
-The default provider is the LLM mock report provider. You can override the model name with:
+The default provider is deterministic mock analysis. Copy `.env.example` to `.env` and configure an OpenAI-compatible service:
 
-```bash
-AI_PROVIDER=llm
-AI_MODEL=demo-model
+```dotenv
+AI_PROVIDER=openai-compatible
+AI_BASE_URL=https://api.example.com/v1
+AI_API_KEY=...
+AI_MODEL=...
+# If a local VPN proxy breaks TLS to the API, bypass it for this host:
+NO_PROXY=api.example.com
 ```
 
-The LLM mock report uses a random score and prompt-title-based mock text for the example essay, comments, grammar issues, rewrite suggestions, material suggestions, and related fields. Generated examples are saved into the examples table so the app's example tab can display them. Set `AI_PROVIDER=mock` to use the older deterministic rule template.
+Process environment variables take precedence over values in `.env`.
+
+If the LLM response fails schema validation, the backend falls back to the rule/mock provider and records provider errors in the report metadata.
