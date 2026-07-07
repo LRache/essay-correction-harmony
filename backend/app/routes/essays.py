@@ -23,6 +23,24 @@ def _load_essay_or_404(db: Database, essay_id: str, user: UserOut) -> EssayOut:
     return essay
 
 
+def _save_generated_examples(db: Database, report: AnalysisReport) -> None:
+    for example in report.examples:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO examples(id, title, prompt, content, theme, highlights_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                example.id,
+                example.title,
+                example.prompt,
+                example.content,
+                example.theme,
+                json.dumps(example.highlights, ensure_ascii=False),
+            ),
+        )
+
+
 @router.post("/essays", response_model=EssayOut)
 def create_essay(
     payload: EssayCreate,
@@ -108,6 +126,7 @@ def create_analysis_job(
             """,
             (db.new_id(), essay_id, job_id, report.model_dump_json(), finished_at),
         )
+        _save_generated_examples(db, report)
         db.execute("UPDATE essays SET status = ?, updated_at = ? WHERE id = ?", ("analyzed", finished_at, essay_id))
     except Exception as exc:
         finished_at = utc_now()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import time
 import urllib.error
 import urllib.request
@@ -260,9 +261,94 @@ class OpenAICompatibleProvider(AnalysisProvider):
         }
 
 
+class AIModelMockProvider(AnalysisProvider):
+    version = "ai-model-mock-2026-07-07"
+
+    def __init__(self, model: str):
+        self.model = model
+
+    def analyze(self, essay_id: str, title: str, prompt: str, content: str, examples: list[ExampleOut]) -> AnalysisReport:
+        started = time.perf_counter()
+        total_score = random.randint(60, 100)
+        score_parts = [
+            ("内容充实", round(total_score * 0.30, 1), 30),
+            ("结构连贯", round(total_score * 0.25, 1), 25),
+            ("主题相关", round(total_score * 0.25, 1), 25),
+            ("语言表达", round(total_score * 0.20, 1), 20),
+        ]
+        comment = f"{title}的评语"
+        grammar_message = f"{title}的语法问题"
+        grammar_suggestion = f"{title}的语法建议"
+        rewrite_original = f"{title}的原文片段"
+        rewrite = f"{title}的改写建议"
+        rewrite_rationale = f"{title}的改写说明"
+        material = f"{title}的素材建议"
+        usage_tip = f"{title}的素材使用建议"
+        issue_end = min(max(len(title), 1), len(content))
+        example = ExampleOut(
+            id=f"mock-example-{essay_id}",
+            title=f"{title}范文",
+            prompt=prompt,
+            content=f"{title}的范文",
+            theme=title,
+            highlights=[comment],
+        )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+
+        return AnalysisReport(
+            essay_id=essay_id,
+            title=title,
+            prompt=prompt,
+            grammar_issues=[
+                GrammarIssue(
+                    id="mock-grammar",
+                    start=0,
+                    end=issue_end,
+                    issue_type="mock_grammar",
+                    severity="medium",
+                    message=grammar_message,
+                    suggestion=grammar_suggestion,
+                )
+            ],
+            coherence=SemanticMetric(score=float(total_score), summary=comment, evidence=[comment]),
+            relevance=SemanticMetric(score=float(total_score), summary=comment, evidence=[comment]),
+            total_score=float(total_score),
+            max_score=100,
+            dimensions=[
+                ScoreDimension(name=name, score=score, max_score=max_score, comment=comment)
+                for name, score, max_score in score_parts
+            ],
+            suggestions=[
+                RewriteSuggestion(
+                    issue_id="mock-grammar",
+                    original=rewrite_original,
+                    rewrite=rewrite,
+                    rationale=rewrite_rationale,
+                )
+            ],
+            materials=[
+                MaterialSuggestion(
+                    theme=title,
+                    material=material,
+                    usage_tip=usage_tip,
+                )
+            ],
+            examples=[example],
+            provider=ProviderMeta(
+                provider="ai-model-mock",
+                model=self.model,
+                version=AIModelMockProvider.version,
+                latency_ms=latency_ms,
+                fallback_used=False,
+                errors=[],
+            ),
+        )
+
+
 def build_provider(settings: Settings) -> AnalysisProvider:
+    if settings.ai_provider == "llm" or settings.ai_provider == "ai-model-mock" or settings.ai_model_configured:
+        return AIModelMockProvider(model=settings.ai_model)
     fallback = MockRuleProvider(model=settings.ai_model)
     if settings.ai_provider == "openai-compatible":
         return OpenAICompatibleProvider(settings=settings, fallback=fallback)
     return fallback
-
