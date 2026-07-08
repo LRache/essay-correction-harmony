@@ -17,7 +17,7 @@ import {
 } from '../model/ApiModels';
 
 export class ApiClient {
-  static baseUrl: string = 'http://10.249.42.57:8000';
+  static baseUrl: string = 'http://192.168.31.152:8000';
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
