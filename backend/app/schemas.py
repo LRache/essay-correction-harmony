@@ -143,7 +143,7 @@ class ReportOverview(BaseModel):
 
 
 class AnalysisJobCreate(BaseModel):
-    provider: Literal["mock", "openai-compatible"] = "openai-compatible"
+    provider: Literal["mock", "local-nlp", "openai-compatible"] = "openai-compatible"
 
 
 class AnalysisJobOut(BaseModel):

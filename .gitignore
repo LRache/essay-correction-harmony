@@ -230,3 +230,6 @@ backend/.cache/
 harmony/**/.hvigor/
 harmony/**/build/
 harmony/**/oh_modules/
+# Downloaded datasets, Hugging Face caches and locally fine-tuned weights.
+backend/.cache/
+backend/models/

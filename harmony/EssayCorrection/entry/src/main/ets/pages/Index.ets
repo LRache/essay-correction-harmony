@@ -15,9 +15,6 @@ import {
 } from '../model/ApiModels';
 import { ApiClient } from '../service/ApiClient';
 
-const API_TEST_PROMPT: string = '请以“那盏一直亮着的灯”为题，写一篇不少于600字的记叙文。要求内容具体，感情真挚，通过细节描写表现人物品质。';
-const API_TEST_ESSAY: string = '那盏一直亮着的灯\n夜已经很深了，窗外的雨丝被风吹得斜斜的。我坐在书桌前，盯着摊开的数学试卷，最后一道题像一堵墙，挡在我面前。台灯把我的影子拉得很长，客厅里却还亮着一盏暖黄色的小灯。\n那是父亲为我留的灯。父亲是一名维修工，每天早出晚归，手指上总带着洗不掉的机油印。那天他刚加班回来，鞋边沾满泥水，眼睛里布着红血丝。他看见我抓着头发发愁，没有催我睡觉，只轻声问：“还差多少？”我没好气地说：“这题太难了，你也不会。”话一出口，我便有些后悔。父亲没有生气，只是笑了笑，转身走进客厅。\n过了一会儿，一杯热牛奶放在我的手边。父亲坐到旧沙发上，拿出维修手册慢慢翻看。客厅的小灯照着他微微弯下的背，也照着他指缝里的黑色油迹。雨点敲打玻璃，屋里安静得只剩纸页翻动的声音。我几次抬头，他都还在那里。\n我重新读题，把条件一条条写下来。思路中断时，我想起父亲修理机器的样子：先检查线路，再寻找故障，从不因为一次失败就摔下工具。我擦掉混乱的算式，从最简单的一步重新开始。半小时后，那道题终于有了答案。我抬起头，父亲已经靠在沙发上睡着了，维修手册还摊在膝头。那盏灯依旧亮着，柔和的光落在他疲惫的脸上。\n我轻轻走过去，拿来一条毯子盖在他身上。父亲醒了醒，第一句话却是：“做出来了吗？”我点点头。他笑着说：“遇到难处别急，一点一点来，总能找到办法。”\n后来，我遇到过许多比那道题更难的事情。每当想要放弃时，我都会想起那个雨夜，想起父亲沉默的陪伴。客厅里的灯并不明亮，却让我懂得：真正的关心未必是响亮的鼓励，也可以是一杯热牛奶、一次安静的等待，以及疲惫时仍为你亮着的一束光。';
-
 @Entry
 @Component
 struct Index {
@@ -33,6 +30,8 @@ struct Index {
   @State password: string = 'student123';
   @State statusText: string = '请先登录';
   @State isAnalyzing: boolean = false;
+  @State selectedProviderIndex: number = 0;
+  @State selectedProvider: string = 'local-nlp';
   @State titleText: string = '';
   @State promptText: string = '';
   @State essayText: string = '';
@@ -350,28 +349,20 @@ struct Index {
           .backgroundColor('#FFFFFF')
 
         Row({ space: 8 }) {
-          Button('项目模型测试')
-            .width('49%')
-            .backgroundColor('#64748B')
-            .fontColor('#FFFFFF')
+          Select([
+            { value: 'BERT 模型' },
+            { value: 'Moonshot 模型' }
+          ])
+            .selected(this.selectedProviderIndex)
+            .value(this.selectedProviderIndex === 0 ? 'BERT 模型' : 'Moonshot 模型')
+            .width('38%')
             .enabled(!this.isAnalyzing)
-            .onClick(() => {
-              this.runApiTest('mock');
+            .onSelect((index: number) => {
+              this.selectedProviderIndex = index;
+              this.selectedProvider = index === 0 ? 'local-nlp' : 'openai-compatible';
             })
-          Button('Moonshot 测试')
-            .width('49%')
-            .backgroundColor('#2563EB')
-            .fontColor('#FFFFFF')
-            .enabled(!this.isAnalyzing)
-            .onClick(() => {
-              this.runApiTest('openai-compatible');
-            })
-        }
-        .width('100%')
-
-        Row({ space: 8 }) {
-          Button(this.isAnalyzing ? '正在批改...' : '提交并用 Moonshot 批改')
-            .width('64%')
+          Button(this.isAnalyzing ? '正在批改...' : '开始批改')
+            .width('34%')
             .backgroundColor('#1E6B5C')
             .fontColor('#FFFFFF')
             .enabled(!this.isAnalyzing)
@@ -379,7 +370,7 @@ struct Index {
               this.submitAndAnalyze();
             })
           Button('看报告')
-            .width('32%')
+            .width('24%')
             .backgroundColor('#F59E0B')
             .fontColor('#111827')
             .onClick(() => {
@@ -467,6 +458,13 @@ struct Index {
             Text(`模型：${this.report.provider.provider} · ${this.report.provider.latency_ms}ms`)
               .fontSize(12)
               .fontColor('#5B6472')
+            if (this.report.provider.fallback_used) {
+              Text(this.report.provider.provider === 'openai-compatible' ?
+                'Moonshot 调用失败，已自动使用本地 BERT 完成批改' :
+                '本地模型部分能力不可用，已使用降级分析')
+                .fontSize(12)
+                .fontColor('#B45309')
+            }
           }
           .alignItems(HorizontalAlign.Start)
           .width('60%')
@@ -1054,15 +1052,7 @@ struct Index {
   }
 
   private async submitAndAnalyze(): Promise<void> {
-    await this.submitContentForAnalysis(this.promptText, this.essayText, 'openai-compatible');
-  }
-
-  private async runApiTest(provider: string): Promise<void> {
-    this.promptText = API_TEST_PROMPT;
-    this.essayText = API_TEST_ESSAY;
-    const providerLabel: string = provider === 'mock' ? '项目自带模型' : 'Moonshot 模型';
-    this.statusText = `正在使用${providerLabel}批改测试作文...`;
-    await this.submitContentForAnalysis(API_TEST_PROMPT, API_TEST_ESSAY, provider);
+    await this.submitContentForAnalysis(this.promptText, this.essayText, this.selectedProvider);
   }
 
   private async submitContentForAnalysis(promptText: string, essayText: string, provider: string): Promise<void> {

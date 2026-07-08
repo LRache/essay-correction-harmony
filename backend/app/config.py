@@ -14,6 +14,12 @@ class Settings:
     ai_base_url: str
     ai_api_key: str
     ai_model: str
+    local_bert_model: str = "uer/chinese_roberta_L-2_H-128"
+    local_model_files_only: bool = False
+    local_model_warmup: bool = False
+    local_scoring_model: str = ""
+    local_grammar_model: str = ""
+    ai_timeout_seconds: int = 60
 
 
 def _load_local_env(path: Path) -> None:
@@ -36,6 +42,7 @@ def _load_local_env(path: Path) -> None:
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[1]
     _load_local_env(backend_root / ".env")
+    os.environ.setdefault("HF_HOME", str(backend_root / ".cache" / "huggingface"))
     default_db = backend_root / "data" / "app.db"
     return Settings(
         database_path=os.getenv("ESSAY_DB_PATH", str(default_db)),
@@ -45,4 +52,10 @@ def load_settings() -> Settings:
         ai_base_url=os.getenv("AI_BASE_URL", ""),
         ai_api_key=os.getenv("AI_API_KEY", ""),
         ai_model=os.getenv("AI_MODEL", "mock-v1"),
+        local_bert_model=os.getenv("LOCAL_BERT_MODEL", "uer/chinese_roberta_L-2_H-128"),
+        local_model_files_only=os.getenv("LOCAL_MODEL_FILES_ONLY", "false").lower() in {"1", "true", "yes"},
+        local_model_warmup=os.getenv("LOCAL_MODEL_WARMUP", "true").lower() in {"1", "true", "yes"},
+        local_scoring_model=os.getenv("LOCAL_SCORING_MODEL", str(backend_root / "models" / "aes-scorer")),
+        local_grammar_model=os.getenv("LOCAL_GRAMMAR_MODEL", str(backend_root / "models" / "grammar-detector")),
+        ai_timeout_seconds=int(os.getenv("AI_TIMEOUT_SECONDS", "60")),
     )

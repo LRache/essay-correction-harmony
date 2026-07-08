@@ -226,9 +226,7 @@ class OpenAICompatibleProvider(AnalysisProvider):
         started = time.perf_counter()
         if not self.settings.ai_base_url or not self.settings.ai_api_key:
             report = self.fallback.analyze(essay_id, title, prompt, content, examples)
-            report.provider.fallback_used = True
-            report.provider.errors.append("AI_BASE_URL or AI_API_KEY is not configured")
-            return report
+            return self._mark_fallback(report, "AI_BASE_URL or AI_API_KEY is not configured", started)
 
         try:
             payload = self._request_payload(title, prompt, content)
@@ -242,7 +240,7 @@ class OpenAICompatibleProvider(AnalysisProvider):
                     "Authorization": f"Bearer {self.settings.ai_api_key}",
                 },
             )
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=self.settings.ai_timeout_seconds) as response:
                 response_data = json.loads(response.read().decode("utf-8"))
             content_json = response_data["choices"][0]["message"]["content"].strip()
             if content_json.startswith("```"):
@@ -278,10 +276,20 @@ class OpenAICompatibleProvider(AnalysisProvider):
             return report
         except (KeyError, ValueError, urllib.error.URLError, TimeoutError, ValidationError) as exc:
             report = self.fallback.analyze(essay_id, title, prompt, content, examples)
-            report.provider.latency_ms = int((time.perf_counter() - started) * 1000)
-            report.provider.fallback_used = True
-            report.provider.errors.append(f"LLM schema validation or request failed: {exc}")
-            return report
+            return self._mark_fallback(report, f"LLM schema validation or request failed: {exc}", started)
+
+    def _mark_fallback(self, report: AnalysisReport, reason: str, started: float) -> AnalysisReport:
+        fallback_provider = report.provider.provider
+        fallback_model = report.provider.model
+        report.provider.provider = "openai-compatible"
+        report.provider.model = self.settings.ai_model
+        report.provider.version = f"fallback-to-{fallback_provider}:{fallback_model}"
+        report.provider.latency_ms = int((time.perf_counter() - started) * 1000)
+        report.provider.fallback_used = True
+        report.provider.errors.append(
+            f"{reason}; fallback provider={fallback_provider}, model={fallback_model}"
+        )
+        return report
 
     def _request_payload(self, title: str, prompt: str, content: str) -> dict[str, Any]:
         schema_hint = json.dumps(LLMCorrectionResult.model_json_schema(), ensure_ascii=False)
@@ -308,6 +316,18 @@ class OpenAICompatibleProvider(AnalysisProvider):
 def build_provider(settings: Settings, provider_name: str | None = None) -> AnalysisProvider:
     fallback = MockRuleProvider()
     selected_provider = provider_name or settings.ai_provider
+    if selected_provider == "local-nlp":
+        from .local_nlp import LocalNLPProvider
+
+        return LocalNLPProvider(settings)
     if selected_provider == "openai-compatible":
+        # Keep the external API fully supported. When local NLP dependencies
+        # are available it also provides a more capable deterministic fallback.
+        try:
+            from .local_nlp import LocalNLPProvider
+
+            fallback = LocalNLPProvider(settings)
+        except Exception:
+            pass
         return OpenAICompatibleProvider(settings=settings, fallback=fallback)
     return fallback

@@ -18,6 +18,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.db = db
     app.state.analysis_provider = build_provider(app_settings)
+    app.state.analysis_providers = {app_settings.ai_provider: app.state.analysis_provider}
 
     app.add_middleware(
         CORSMiddleware,
@@ -39,4 +40,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
-

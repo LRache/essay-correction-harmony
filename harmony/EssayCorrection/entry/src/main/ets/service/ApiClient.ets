@@ -17,7 +17,7 @@ import {
 } from '../model/ApiModels';
 
 export class ApiClient {
-  static baseUrl: string = 'http://192.168.31.152:8000';
+  static baseUrl: string = 'http://10.249.42.57:8000';
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
@@ -156,7 +156,10 @@ export class ApiClient {
       expectDataType: http.HttpDataType.STRING,
       // Real LLM correction is synchronous on the backend and commonly takes
       // longer than a normal CRUD request.
-      readTimeout: 60000,
+      // Backend allows the external model up to 60 seconds. Keep the client
+      // timeout slightly longer so it can receive either the result or the
+      // backend's local-BERT fallback response.
+      readTimeout: 90000,
       connectTimeout: 10000,
       usingCache: false
     };

@@ -13,6 +13,18 @@ from ..serializers import essay_from_row, example_from_row, job_from_row, writin
 router = APIRouter(tags=["essays"])
 
 
+def _normalize_legacy_external_fallback(report: AnalysisReport) -> AnalysisReport:
+    """Keep reports created before fallback metadata preserved the requested provider."""
+    if (
+        report.provider.fallback_used
+        and report.provider.provider == "local-nlp"
+        and any("LLM schema validation or request failed" in error for error in report.provider.errors)
+    ):
+        report.provider.provider = "openai-compatible"
+        report.provider.version = f"fallback-to-local-nlp:{report.provider.model}"
+    return report
+
+
 def _load_essay_or_404(db: Database, essay_id: str, user: UserOut) -> EssayOut:
     row = db.one("SELECT * FROM essays WHERE id = ?", (essay_id,))
     if row is None:
@@ -81,8 +93,18 @@ def create_analysis_job(
     essay = _load_essay_or_404(db, essay_id, user)
     settings = request.app.state.settings
     requested_provider = payload.provider if payload is not None else settings.ai_provider
-    requested_model = "mock-v1" if requested_provider == "mock" else settings.ai_model
-    provider: AnalysisProvider = build_provider(settings, requested_provider)
+    requested_model = (
+        "mock-v1"
+        if requested_provider == "mock"
+        else settings.local_bert_model
+        if requested_provider == "local-nlp"
+        else settings.ai_model
+    )
+    providers: dict[str, AnalysisProvider] = request.app.state.analysis_providers
+    provider = providers.get(requested_provider)
+    if provider is None:
+        provider = build_provider(settings, requested_provider)
+        providers[requested_provider] = provider
     started_at = utc_now()
     job_id = db.new_id()
     db.execute(
@@ -154,7 +176,8 @@ def get_report(
     row = db.one("SELECT data_json FROM reports WHERE essay_id = ? ORDER BY created_at DESC LIMIT 1", (essay_id,))
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    return AnalysisReport.model_validate(json.loads(row["data_json"]))
+    report = AnalysisReport.model_validate(json.loads(row["data_json"]))
+    return _normalize_legacy_external_fallback(report)
 
 
 @router.get("/reports", response_model=list[ReportOverview])
@@ -176,7 +199,7 @@ def list_reports(
         )
         if report_row is None:
             continue
-        report = AnalysisReport.model_validate(json.loads(report_row["data_json"]))
+        report = _normalize_legacy_external_fallback(AnalysisReport.model_validate(json.loads(report_row["data_json"])))
         reports.append(
             ReportOverview(
                 essay_id=essay.id,
