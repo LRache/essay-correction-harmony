@@ -2,7 +2,6 @@ import {
   AnalysisReport,
   EssayOut,
   ExampleOut,
-  GrammarIssue,
   MaterialSuggestion,
   ReportPromptGroup,
   ReportOverview,
@@ -479,15 +478,20 @@ struct Index {
           this.DimensionRow(dimension)
         }, (dimension: ScoreDimension) => dimension.name)
 
-        this.SectionTitle('语法问题')
-        ForEach(this.report.grammar_issues, (issue: GrammarIssue) => {
-          this.IssueRow(issue)
-        }, (issue: GrammarIssue) => issue.id)
-
         this.SectionTitle('改写建议')
-        ForEach(this.report.suggestions, (suggestion: RewriteSuggestion) => {
-          this.SuggestionRow(suggestion)
-        }, (suggestion: RewriteSuggestion) => suggestion.issue_id)
+        if (this.report.suggestions.length === 0) {
+          Text('未发现能够给出可靠完整改写的句子。系统已过滤仅定位到单个字符、但无法确定正确改法的建议。')
+            .fontSize(13)
+            .fontColor('#64748B')
+            .width('100%')
+            .padding(12)
+            .backgroundColor('#FFFFFF')
+            .borderRadius(8)
+        } else {
+          ForEach(this.report.suggestions, (suggestion: RewriteSuggestion) => {
+            this.SuggestionRow(suggestion)
+          }, (suggestion: RewriteSuggestion) => suggestion.issue_id)
+        }
 
         this.SectionTitle('素材建议')
         ForEach(this.report.materials, (material: MaterialSuggestion) => {
@@ -810,27 +814,28 @@ struct Index {
 
   @Builder
   DimensionRow(item: ScoreDimension) {
-    Row() {
-      Column() {
+    Column({ space: 6 }) {
+      Row() {
         Text(item.name)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .fontColor('#162033')
-        Text(item.comment)
-          .fontSize(12)
-          .fontColor('#64748B')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(`${item.score}/${item.max_score}`)
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#2563EB')
+          .textAlign(TextAlign.End)
       }
-      .alignItems(HorizontalAlign.Start)
-      .width('70%')
-      Text(`${item.score}/${item.max_score}`)
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#2563EB')
-        .textAlign(TextAlign.End)
-        .width('30%')
+      .width('100%')
+      Text(item.comment)
+        .fontSize(12)
+        .fontColor('#64748B')
+        .width('100%')
+        .maxLines(4)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding(12)
     .backgroundColor('#FFFFFF')
@@ -838,36 +843,36 @@ struct Index {
   }
 
   @Builder
-  IssueRow(item: GrammarIssue) {
-    Column({ space: 6 }) {
-      Text(item.message)
-        .fontSize(14)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#B45309')
-      Text(item.suggestion)
-        .fontSize(13)
-        .fontColor('#475569')
-    }
-    .alignItems(HorizontalAlign.Start)
-    .width('100%')
-    .padding(12)
-    .backgroundColor('#FFF7ED')
-    .borderRadius(8)
-  }
-
-  @Builder
   SuggestionRow(item: RewriteSuggestion) {
     Column({ space: 6 }) {
-      Text(item.original)
+      Text(`修改位置：第 ${item.paragraph_index} 段，第 ${item.sentence_index} 句`)
+        .fontSize(13)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#2563EB')
+      if ((item.issue_text ?? '').length > 0) {
+        Text(`问题片段：“${item.issue_text ?? ''}”`)
+          .fontSize(12)
+          .fontColor('#B45309')
+      }
+      Text('原句')
+        .fontSize(12)
+        .fontColor('#64748B')
+      Text(item.original ?? '')
         .fontSize(13)
         .fontColor('#64748B')
-      Text(item.rewrite)
+      Text('修改后')
+        .fontSize(12)
+        .fontColor('#64748B')
+      Text(item.rewrite ?? '')
         .fontSize(14)
         .fontWeight(FontWeight.Bold)
         .fontColor('#1E6B5C')
-      Text(item.rationale)
+      Text(`修改原因：${item.rationale ?? ''}`)
         .fontSize(12)
         .fontColor('#475569')
+      Text(`这样修改的好处：${item.improvement ?? '修改后语句表达更准确，结构更清楚。'}`)
+        .fontSize(12)
+        .fontColor('#1E6B5C')
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')

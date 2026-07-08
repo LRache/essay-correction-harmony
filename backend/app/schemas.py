@@ -87,6 +87,12 @@ class RewriteSuggestion(BaseModel):
     original: str
     rewrite: str
     rationale: str
+    improvement: str = ""
+    issue_text: str = ""
+    paragraph_index: int = 1
+    sentence_index: int = 1
+    start: int = -1
+    end: int = -1
 
 
 class MaterialSuggestion(BaseModel):

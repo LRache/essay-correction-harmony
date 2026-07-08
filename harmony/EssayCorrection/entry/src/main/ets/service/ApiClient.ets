@@ -9,6 +9,7 @@ import {
   LoginPayload,
   LoginResponse,
   ReportOverview,
+  RewriteSuggestion,
   TeacherEssayOut,
   TeacherReviewOut,
   TeacherReviewPayload,
@@ -90,7 +91,46 @@ export class ApiClient {
 
   static async getReport(essayId: string): Promise<AnalysisReport> {
     const raw: string = await ApiClient.request(`/essays/${essayId}/report`, http.RequestMethod.GET, undefined, ApiClient.authToken);
-    return JSON.parse(raw) as AnalysisReport;
+    const report = JSON.parse(raw) as AnalysisReport;
+    if (report.suggestions === undefined) {
+      report.suggestions = [];
+    }
+    const cleanedSuggestions: RewriteSuggestion[] = [];
+    for (let index = 0; index < report.suggestions.length; index++) {
+      const item: RewriteSuggestion = report.suggestions[index];
+      const original: string = (item.original ?? '').trim();
+      const rewrite: string = (item.rewrite ?? '').trim();
+      const rationale: string = (item.rationale ?? '').trim();
+      const issueText: string = (item.issue_text ?? '').trim();
+      const paragraphIndex: number = item.paragraph_index ?? 0;
+      const sentenceIndex: number = item.sentence_index ?? 0;
+      const start: number = item.start ?? -1;
+      const end: number = item.end ?? -1;
+      const isGeneric: boolean = rationale.indexOf('结合上下文检查') >= 0 ||
+        rationale.indexOf('检查词语搭配、成分完整性或语序') >= 0 ||
+        rationale.indexOf('并重点核实该处') >= 0;
+      const hasReliableLocation: boolean = paragraphIndex > 0 && sentenceIndex > 0 &&
+        start >= 0 && end > start && issueText.length > 0;
+      const isCompleteRewrite: boolean = original.length >= 4 && rewrite.length >= 4;
+      if (!hasReliableLocation || !isCompleteRewrite || original === rewrite || rationale.length < 6 || isGeneric) {
+        continue;
+      }
+      item.original = original;
+      item.rewrite = rewrite;
+      item.rationale = rationale;
+      item.improvement = (item.improvement ?? '').trim();
+      if (item.improvement.length === 0) {
+        item.improvement = '修改后语句表达更准确，结构更清楚。';
+      }
+      item.issue_text = issueText;
+      item.paragraph_index = paragraphIndex;
+      item.sentence_index = sentenceIndex;
+      item.start = start;
+      item.end = end;
+      cleanedSuggestions.push(item);
+    }
+    report.suggestions = cleanedSuggestions;
+    return report;
   }
 
   static async listReportOverviews(): Promise<ReportOverview[]> {

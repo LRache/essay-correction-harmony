@@ -230,13 +230,27 @@ export class RewriteSuggestion {
   original: string = '';
   rewrite: string = '';
   rationale: string = '';
+  improvement: string = '';
+  issue_text: string = '';
+  paragraph_index: number = 0;
+  sentence_index: number = 0;
+  start: number = -1;
+  end: number = -1;
 
-  static create(issueId: string, original: string, rewrite: string, rationale: string): RewriteSuggestion {
+  static create(issueId: string, original: string, rewrite: string, rationale: string,
+    improvement: string = '', issueText: string = '', paragraphIndex: number = 0,
+    sentenceIndex: number = 0, start: number = -1, end: number = -1): RewriteSuggestion {
     const suggestion = new RewriteSuggestion();
     suggestion.issue_id = issueId;
     suggestion.original = original;
     suggestion.rewrite = rewrite;
     suggestion.rationale = rationale;
+    suggestion.improvement = improvement;
+    suggestion.issue_text = issueText;
+    suggestion.paragraph_index = paragraphIndex;
+    suggestion.sentence_index = sentenceIndex;
+    suggestion.start = start;
+    suggestion.end = end;
     return suggestion;
   }
 }
@@ -349,9 +363,7 @@ export class AnalysisReport {
       ScoreDimension.create('主题相关', 22, 25, '扣题意识较强。'),
       ScoreDimension.create('语言表达', 16, 20, '个别表达可精炼。')
     ];
-    report.suggestions = [
-      RewriteSuggestion.create('grammar-duplicate-de', '重要的的选择', '重要的选择', '删除重复助词，让句子更简洁。')
-    ];
+    report.suggestions = [];
     report.materials = [
       MaterialSuggestion.create('成长', '补充一个具体动作，如递出报名表、停顿、回头等。', '把心理变化放在动作后面写。')
     ];

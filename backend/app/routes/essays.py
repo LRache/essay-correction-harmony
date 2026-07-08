@@ -25,6 +25,32 @@ def _normalize_legacy_external_fallback(report: AnalysisReport) -> AnalysisRepor
     return report
 
 
+def _clean_legacy_suggestions(report: AnalysisReport, content: str) -> AnalysisReport:
+    """Normalize persisted suggestions and replace obsolete placeholder comments."""
+    from ..analysis.providers import MockRuleProvider, OpenAICompatibleProvider
+
+    report.suggestions = OpenAICompatibleProvider._sanitize_suggestions(content, report.suggestions)
+    placeholder_comments = (
+        "依据篇幅和素材展开度估算",
+        "首版由规则特征映射",
+        "依据规则检测问题数量估算",
+    )
+    if any(not item.comment.strip() or any(text in item.comment for text in placeholder_comments) for item in report.dimensions):
+        actionable_issues = [issue for issue in report.grammar_issues if issue.issue_type != "bert_grammar"]
+        generated = MockRuleProvider()._dimensions(
+            report.prompt,
+            content,
+            actionable_issues,
+            report.coherence.score,
+            report.relevance.score,
+        )
+        generated_comments = {item.name: item.comment for item in generated}
+        for item in report.dimensions:
+            if not item.comment.strip() or any(text in item.comment for text in placeholder_comments):
+                item.comment = generated_comments.get(item.name, item.comment)
+    return report
+
+
 def _load_essay_or_404(db: Database, essay_id: str, user: UserOut) -> EssayOut:
     row = db.one("SELECT * FROM essays WHERE id = ?", (essay_id,))
     if row is None:
@@ -172,12 +198,13 @@ def get_report(
     db: Database = Depends(get_db),
     user: UserOut = Depends(current_user),
 ) -> AnalysisReport:
-    _load_essay_or_404(db, essay_id, user)
+    essay = _load_essay_or_404(db, essay_id, user)
     row = db.one("SELECT data_json FROM reports WHERE essay_id = ? ORDER BY created_at DESC LIMIT 1", (essay_id,))
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     report = AnalysisReport.model_validate(json.loads(row["data_json"]))
-    return _normalize_legacy_external_fallback(report)
+    report = _normalize_legacy_external_fallback(report)
+    return _clean_legacy_suggestions(report, essay.content)
 
 
 @router.get("/reports", response_model=list[ReportOverview])

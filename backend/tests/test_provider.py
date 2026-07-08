@@ -6,6 +6,7 @@ import urllib.request
 from app.analysis.local_nlp import LocalNLPProvider, NltkChineseGrammarChecker
 from app.analysis.providers import MockRuleProvider, OpenAICompatibleProvider
 from app.config import Settings
+from app.schemas import GrammarIssue, RewriteSuggestion
 
 
 class FakeResponse:
@@ -99,3 +100,113 @@ def test_local_nlp_provider_has_safe_semantic_fallback() -> None:
     assert report.provider.fallback_used is True
     assert report.coherence.score > 0
     assert report.relevance.score > 0
+
+
+def test_rewrite_suggestions_are_actionable_and_have_positions() -> None:
+    provider = MockRuleProvider()
+    content = "这是一个重要的的选择。"
+    issues = [
+        GrammarIssue(
+            id="duplicate", start=6, end=8, issue_type="duplicate_particle",
+            severity="medium", message="重复", suggestion="删除重复助词",
+        ),
+        GrammarIssue(
+            id="uncertain", start=2, end=3, issue_type="bert_grammar",
+            severity="medium", message="可能有问题", suggestion="结合上下文检查",
+        ),
+    ]
+
+    suggestions = provider._suggestions(content, issues)
+
+    assert len(suggestions) == 1
+    assert suggestions[0].original == "这是一个重要的的选择。"
+    assert suggestions[0].rewrite == "这是一个重要的选择。"
+    assert suggestions[0].issue_text == "的的"
+    assert suggestions[0].paragraph_index == 1
+    assert suggestions[0].sentence_index == 1
+    assert suggestions[0].start == 6
+    assert suggestions[0].end == 8
+    assert "重复助词" in suggestions[0].rationale
+    assert suggestions[0].improvement
+
+
+def test_external_suggestion_filter_removes_noop_generic_and_unlocated_items() -> None:
+    content = "我认真完成了作业。"
+    candidates = [
+        RewriteSuggestion(issue_id="noop", original="我", rewrite="我", rationale="没有变化"),
+        RewriteSuggestion(
+            issue_id="generic", original="认真", rewrite="仔细",
+            rationale="结合上下文检查词语搭配、成分完整性或语序，并重写该处。",
+        ),
+        RewriteSuggestion(
+            issue_id="valid", original="认真", rewrite="仔细",
+            rationale="“仔细”更准确地修饰完成作业这一动作。",
+        ),
+        RewriteSuggestion(
+            issue_id="missing", original="不存在", rewrite="其他", rationale="原文没有这个片段，因此不能定位。",
+        ),
+        RewriteSuggestion(
+            issue_id="legacy-char", original="我", rewrite="他",
+            rationale="这个单字可能需要替换，但旧报告没有保存准确位置。",
+        ),
+    ]
+
+    cleaned = OpenAICompatibleProvider._sanitize_suggestions(content, candidates)
+
+    assert len(cleaned) == 1
+    assert cleaned[0].issue_id == "valid"
+    assert cleaned[0].issue_text == "认真"
+    assert cleaned[0].original == "我认真完成了作业。"
+    assert cleaned[0].rewrite == "我仔细完成了作业。"
+    assert cleaned[0].paragraph_index == 1
+    assert cleaned[0].sentence_index == 1
+
+
+def test_external_suggestion_keeps_positioned_character_fix_as_full_sentence() -> None:
+    content = "他把书递给了我。"
+    candidate = RewriteSuggestion(
+        issue_id="positioned",
+        original="把",
+        rewrite="将",
+        rationale="书面叙述中改用“将”，语气更正式。",
+        issue_text="把",
+        start=1,
+        end=2,
+    )
+
+    cleaned = OpenAICompatibleProvider._sanitize_suggestions(content, [candidate])
+
+    assert len(cleaned) == 1
+    assert cleaned[0].original == "他把书递给了我。"
+    assert cleaned[0].rewrite == "他将书递给了我。"
+
+
+def test_rewrite_suggestion_locates_paragraph_and_sentence() -> None:
+    provider = MockRuleProvider()
+    content = "开头第一句。开头第二句。\n\n第二段有的的错误。"
+    start = content.index("的的")
+    issue = GrammarIssue(
+        id="duplicate", start=start, end=start + 2, issue_type="duplicate_particle",
+        severity="medium", message="重复", suggestion="删除重复助词",
+    )
+
+    suggestion = provider._suggestions(content, [issue])[0]
+
+    assert suggestion.paragraph_index == 2
+    assert suggestion.sentence_index == 1
+    assert suggestion.original == "第二段有的的错误。"
+    assert suggestion.rewrite == "第二段有的错误。"
+
+
+def test_dimension_comments_are_specific_to_the_essay() -> None:
+    provider = MockRuleProvider()
+    content = "首先，我决定参加比赛。\n后来，我认真完成了训练。"
+
+    dimensions = provider._dimensions("请以一次选择为题", content, [], 82.0, 88.0)
+    comments = {item.name: item.comment for item in dimensions}
+
+    assert f"正文约{len(content.replace(chr(10), ''))}字" in comments["内容充实"]
+    assert "共2段" in comments["内容充实"]
+    assert "“首先”" in comments["结构连贯"]
+    assert "主题匹配度为88.0%" in comments["主题相关"]
+    assert "未检测到明确的规则类语病" in comments["语言表达"]

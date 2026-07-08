@@ -386,7 +386,11 @@ class LocalNLPProvider(AnalysisProvider):
                 grammar_issues.append(learned_issue)
         grammar_issues.sort(key=lambda item: (item.start, item.end, item.issue_type))
         scores = self.semantic.analyze(prompt, content)
-        dimensions = self.rules._dimensions(content, grammar_issues, scores.coherence, scores.relevance)
+        # The learned detector is intentionally recall-oriented and may still
+        # produce false positives. Until a concrete rewrite can be generated,
+        # those tentative spans must not lower the language score.
+        actionable_issues = [issue for issue in grammar_issues if issue.issue_type != "bert_grammar"]
+        dimensions = self.rules._dimensions(prompt, content, actionable_issues, scores.coherence, scores.relevance)
         predicted_score, scoring_error = self.scorer.predict(prompt, content)
         total_score = predicted_score if predicted_score is not None else round(sum(item.score for item in dimensions), 1)
         if predicted_score is not None:
@@ -413,7 +417,7 @@ class LocalNLPProvider(AnalysisProvider):
             total_score=total_score,
             max_score=100,
             dimensions=dimensions,
-            suggestions=self.rules._suggestions(content, grammar_issues),
+            suggestions=self.rules._suggestions(content, actionable_issues),
             materials=self.rules._materials(prompt, content),
             examples=examples[:2],
             provider=ProviderMeta(
