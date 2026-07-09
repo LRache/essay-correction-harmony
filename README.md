@@ -2,11 +2,10 @@
 
 本项目是一套面向中文作文教学的智能批改系统，包含 HarmonyOS ArkTS 客户端以及 FastAPI 后端。
 
-系统支持三种批改方式：
+系统支持两种批改方式：
 
 - `local-nlp`：使用 NLTK 检测语法问题，并通过 Hugging Face 中文 BERT 分析文章连贯性、主题相关性和作文评分。
 - `openai-compatible`：调用 Moonshot 等兼容 OpenAI 接口的外部大模型。
-- `mock`：使用轻量规则快速生成演示报告。
 
 ## 项目结构
 

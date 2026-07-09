@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .analysis import build_provider
 from .config import Settings, load_settings
 from .db import Database
-from .routes import auth, essays, examples, teacher
+from .routes import auth, classes, essays, examples, teacher
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth.router)
+    app.include_router(classes.router)
     app.include_router(essays.router)
     app.include_router(examples.router)
     app.include_router(teacher.router)

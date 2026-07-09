@@ -62,6 +62,36 @@ def locate_sentence(content: str, start: int, end: int) -> tuple[int, int, int, 
     return max(paragraph_number, 1), max(sentence_number, 1), fallback_start, fallback_end, content[fallback_start:fallback_end]
 
 
+def sentence_spans(content: str) -> list[tuple[int, int, int, int, str]]:
+    spans: list[tuple[int, int, int, int, str]] = []
+    paragraph_number = 0
+    cursor = 0
+    for line in content.splitlines(keepends=True) or [content]:
+        line_start = cursor
+        cursor += len(line)
+        paragraph = line.rstrip("\r\n")
+        if not paragraph.strip():
+            continue
+        paragraph_number += 1
+        sentence_number = 0
+        for match in re.finditer(r"[^。！？!?；;]+[。！？!?；;]?", paragraph):
+            raw = match.group(0)
+            sentence = raw.strip()
+            if not sentence:
+                continue
+            sentence_number += 1
+            leading = len(raw) - len(raw.lstrip())
+            trailing = len(raw) - len(raw.rstrip())
+            start = line_start + match.start() + leading
+            end = line_start + match.end() - trailing
+            spans.append((paragraph_number, sentence_number, start, end, content[start:end]))
+    if not spans and content.strip():
+        stripped_start = len(content) - len(content.lstrip())
+        stripped_end = len(content.rstrip())
+        spans.append((1, 1, stripped_start, stripped_end, content[stripped_start:stripped_end]))
+    return spans
+
+
 class AnalysisProvider(ABC):
     @abstractmethod
     def analyze(self, essay_id: str, title: str, prompt: str, content: str, examples: list[ExampleOut]) -> AnalysisReport:
@@ -81,10 +111,10 @@ class LLMCorrectionResult(BaseModel):
     materials: list[MaterialSuggestion]
 
 
-class MockRuleProvider(AnalysisProvider):
-    version = "mock-rules-2026-07-06"
+class RuleSupportProvider(AnalysisProvider):
+    version = "rule-support-2026-07-06"
 
-    def __init__(self, model: str = "mock-v1"):
+    def __init__(self, model: str = "rule-support-v2"):
         self.model = model
 
     def analyze(self, essay_id: str, title: str, prompt: str, content: str, examples: list[ExampleOut]) -> AnalysisReport:
@@ -94,7 +124,7 @@ class MockRuleProvider(AnalysisProvider):
         relevance_score = self._relevance_score(prompt, content)
         dimensions = self._dimensions(prompt, content, grammar_issues, coherence_score, relevance_score)
         total_score = round(sum(item.score for item in dimensions), 1)
-        suggestions = self._suggestions(content, grammar_issues)
+        suggestions = self._suggestions(content, grammar_issues) + self._deep_suggestions(prompt, content)
         materials = self._materials(prompt, content)
         latency_ms = int((time.perf_counter() - started) * 1000)
         return AnalysisReport(
@@ -119,11 +149,11 @@ class MockRuleProvider(AnalysisProvider):
             materials=materials,
             examples=examples[:2],
             provider=ProviderMeta(
-                provider="mock",
+                provider="local-nlp",
                 model=self.model,
-                version=MockRuleProvider.version,
+                version=RuleSupportProvider.version,
                 latency_ms=latency_ms,
-                fallback_used=False,
+                fallback_used=True,
                 errors=[],
             ),
         )
@@ -337,6 +367,9 @@ class MockRuleProvider(AnalysisProvider):
                     rationale=rationale,
                     improvement=improvement,
                     issue_text=issue_text,
+                    category="语言表达",
+                    scope="sentence",
+                    priority="high" if issue.severity == "high" else "medium",
                     paragraph_index=paragraph,
                     sentence_index=sentence,
                     start=issue.start,
@@ -344,6 +377,215 @@ class MockRuleProvider(AnalysisProvider):
                 )
             )
         return suggestions
+
+    def _deep_suggestions(self, prompt: str, content: str) -> list[RewriteSuggestion]:
+        suggestions: list[RewriteSuggestion] = []
+        spans = sentence_spans(content)
+        if not spans:
+            return suggestions
+
+        self._add_allusion_suggestion(prompt, content, spans, suggestions)
+        self._add_detail_suggestion(content, spans, suggestions)
+        self._add_theme_ending_suggestion(prompt, spans, suggestions)
+        self._add_structure_suggestion(content, spans, suggestions)
+        if not suggestions:
+            self._add_polish_suggestion(spans, suggestions)
+        return suggestions[:4]
+
+    def _add_allusion_suggestion(
+        self,
+        prompt: str,
+        content: str,
+        spans: list[tuple[int, int, int, int, str]],
+        suggestions: list[RewriteSuggestion],
+    ) -> None:
+        allusions = {
+            "守株待兔": ("侥幸等待", ("等待", "侥幸", "懒惰", "机会")),
+            "刻舟求剑": ("方法僵化", ("方法", "变化", "灵活", "反思")),
+            "亡羊补牢": ("及时补救", ("补救", "错误", "改正", "反思")),
+            "愚公移山": ("坚持不懈", ("坚持", "毅力", "困难", "目标")),
+            "揠苗助长": ("急于求成", ("急躁", "规律", "成长", "方法")),
+        }
+        for allusion, (meaning, theme_words) in allusions.items():
+            if allusion not in content:
+                continue
+            prompt_match = any(word in prompt for word in theme_words)
+            paragraph, sentence, start, end, original = next(
+                (item for item in spans if allusion in item[4]),
+                (1, 1, content.index(allusion), content.index(allusion) + len(allusion), allusion),
+            )
+            if prompt_match:
+                rewrite = (
+                    f"{original} 可以进一步点明“{allusion}”和题目之间的关系，例如补出它对应的"
+                    f"“{meaning}”如何推动人物选择。"
+                )
+                rationale = f"典故本身可用，但目前只是提到“{allusion}”，还没有解释它和中心主题的关系。"
+            else:
+                rewrite = (
+                    f"如果文章重点是题目中的核心经历，可以把“{allusion}”换成更贴近主题的生活细节，"
+                    "例如写人物在关键时刻的犹豫、行动和结果，而不是用含义不完全贴合的典故代替叙事。"
+                )
+                rationale = f"“{allusion}”主要指向“{meaning}”，和当前题目要求的中心不够贴合，容易让立意偏离。"
+            suggestions.append(
+                RewriteSuggestion(
+                    issue_id=f"deep-allusion-{allusion}",
+                    original=original,
+                    rewrite=rewrite,
+                    rationale=rationale,
+                    improvement="调整后，素材与主题之间的逻辑会更清楚，典故不会停留在装饰层面。",
+                    issue_text=allusion,
+                    category="素材与典故",
+                    scope="allusion",
+                    priority="high" if not prompt_match else "medium",
+                    paragraph_index=paragraph,
+                    sentence_index=sentence,
+                    start=start,
+                    end=end,
+                )
+            )
+            return
+
+    def _add_detail_suggestion(
+        self,
+        content: str,
+        spans: list[tuple[int, int, int, int, str]],
+        suggestions: list[RewriteSuggestion],
+    ) -> None:
+        detail_words = ("看见", "听见", "攥", "递", "停住", "低头", "抬头", "脸", "手", "雨", "光", "声音", "心里", "紧张")
+        has_dialogue = "“" in content or "”" in content or '"' in content
+        detail_hits = sum(word in content for word in detail_words)
+        if has_dialogue and detail_hits >= 3:
+            return
+        target = next((item for item in spans if any(word in item[4] for word in ("明白", "知道", "感到", "觉得", "意识到"))), spans[-1])
+        paragraph, sentence, start, end, original = target
+        rewrite = (
+            f"{original.rstrip('。！？!?')}。可以在这一处前补一两句画面：写清人物的动作、神态、环境声音，"
+            "再写“我”的心理变化，让读者先看到过程，再相信后面的感悟。"
+        )
+        suggestions.append(
+            RewriteSuggestion(
+                issue_id=f"deep-detail-{start}",
+                original=original,
+                rewrite=rewrite,
+                rationale="文章有事件结果和感悟，但关键场景的动作、神态、环境和心理描写偏少，画面感不够强。",
+                improvement="补充细节后，文章会从概括叙述变成可感知的场景，情感变化也更自然。",
+                issue_text="描写不够细腻",
+                category="描写细化",
+                scope="paragraph",
+                priority="medium",
+                paragraph_index=paragraph,
+                sentence_index=sentence,
+                start=start,
+                end=end,
+            )
+        )
+
+    def _add_theme_ending_suggestion(
+        self,
+        prompt: str,
+        spans: list[tuple[int, int, int, int, str]],
+        suggestions: list[RewriteSuggestion],
+    ) -> None:
+        theme_terms = [term for term in re.findall(r"[\u4e00-\u9fff]{2,4}", prompt) if term not in {"请以", "写一篇", "记叙文"}]
+        if not theme_terms:
+            return
+        paragraph, sentence, start, end, original = spans[-1]
+        if any(term in original for term in theme_terms[:5]):
+            return
+        theme = "、".join(theme_terms[:2])
+        rewrite = f"{original.rstrip('。！？!?')}。结尾可以再回扣“{theme}”，点明这件事让人物获得了怎样的认识或改变。"
+        suggestions.append(
+            RewriteSuggestion(
+                issue_id=f"deep-theme-ending-{start}",
+                original=original,
+                rewrite=rewrite,
+                rationale="结尾有收束，但和题目关键词的呼应还不够明确，读者不容易立刻抓住中心。",
+                improvement="回扣题目后，文章立意会更集中，结尾也更有完成感。",
+                issue_text="扣题不足",
+                category="立意扣题",
+                scope="ending",
+                priority="medium",
+                paragraph_index=paragraph,
+                sentence_index=sentence,
+                start=start,
+                end=end,
+            )
+        )
+
+    def _add_structure_suggestion(
+        self,
+        content: str,
+        spans: list[tuple[int, int, int, int, str]],
+        suggestions: list[RewriteSuggestion],
+    ) -> None:
+        connectors = ("首先", "后来", "然后", "但是", "于是", "因此", "最后", "那一刻", "接着")
+        if any(word in content for word in connectors) or len(spans) < 4:
+            return
+        paragraph, sentence, start, end, original = spans[min(1, len(spans) - 1)]
+        rewrite = f"可以在“{original}”前增加过渡句，例如“起初我并没有意识到这件事的重要，直到后来发生了一个转折。”"
+        suggestions.append(
+            RewriteSuggestion(
+                issue_id=f"deep-structure-{start}",
+                original=original,
+                rewrite=rewrite,
+                rationale="文章按事情发展写下来了，但缺少提示转折和递进的句子，层次感会被削弱。",
+                improvement="加入过渡后，事件推进更清楚，读者能更容易看见人物变化的过程。",
+                issue_text="层次推进不够清晰",
+                category="结构推进",
+                scope="paragraph",
+                priority="low",
+                paragraph_index=paragraph,
+                sentence_index=sentence,
+                start=start,
+                end=end,
+            )
+        )
+
+    def _add_polish_suggestion(
+        self,
+        spans: list[tuple[int, int, int, int, str]],
+        suggestions: list[RewriteSuggestion],
+    ) -> None:
+        target = next(
+            (
+                item
+                for item in spans
+                if any(word in item[4] for word in ("伞", "书包", "肩膀", "红薯", "保温袋", "手臂", "路灯"))
+            ),
+            spans[max(0, len(spans) // 2)],
+        )
+        paragraph, sentence, start, end, original = target
+        stripped = original.rstrip("。！？!?")
+        if "伞" in original:
+            rewrite = (
+                f"{stripped}，伞沿的雨水一串串落在她肩头，她却像没有察觉似的，"
+                "只把伞柄又往我这边送了送。"
+            )
+        elif "红薯" in original or "保温袋" in original:
+            rewrite = (
+                f"{stripped}，热气贴着掌心慢慢散开，我原本急躁的心也跟着安静下来。"
+            )
+        else:
+            rewrite = (
+                f"{stripped}。这一处可以再补一个细小动作或瞬间心理，让人物情感变化更有层次。"
+            )
+        suggestions.append(
+            RewriteSuggestion(
+                issue_id=f"deep-polish-{start}",
+                original=original,
+                rewrite=rewrite,
+                rationale="文章整体完成度较高，没有明显硬伤；这条建议属于升格润色，目的是把已经存在的温暖细节写得更有画面感。",
+                improvement="升格后，读者能更清楚地看见人物动作和环境细节，情感表达也会更细腻。",
+                issue_text="可进一步升格",
+                category="描写细化",
+                scope="sentence",
+                priority="low",
+                paragraph_index=paragraph,
+                sentence_index=sentence,
+                start=start,
+                end=end,
+            )
+        )
 
     def _materials(self, prompt: str, content: str) -> list[MaterialSuggestion]:
         theme = "成长"
@@ -501,6 +743,10 @@ class OpenAICompatibleProvider(AnalysisProvider):
             suggestion.sentence_index = sentence
             if not suggestion.improvement.strip():
                 suggestion.improvement = "修改后语句表达更准确，结构更清晰，也更便于读者理解。"
+            if not suggestion.category.strip():
+                suggestion.category = "语言表达"
+            if not suggestion.scope.strip():
+                suggestion.scope = "sentence"
             cleaned.append(suggestion)
             if len(cleaned) >= 8:
                 break
@@ -522,6 +768,9 @@ class OpenAICompatibleProvider(AnalysisProvider):
                         "improvement 必须具体说明改写后在准确性、清晰度或表达效果上好在哪里。"
                         "建议必须提供完整句子的改写，不得只返回单个字的同义替换。"
                         "禁止输出泛泛的“结合上下文检查”类建议。严格遵循此 JSON Schema："
+                        "除了语病、标点和错别字，也必须从素材典故是否贴合主题、场景描写是否细腻、情感推进是否自然、"
+                        "结构过渡是否清楚、结尾是否扣题等深层角度给出改写建议。"
+                        "每条 suggestions 必须填写 category、scope、priority；category 可使用语言表达、素材与典故、描写细化、结构推进、立意扣题。"
                         f"{schema_hint}"
                     ),
                 },
@@ -534,7 +783,6 @@ class OpenAICompatibleProvider(AnalysisProvider):
 
 
 def build_provider(settings: Settings, provider_name: str | None = None) -> AnalysisProvider:
-    fallback = MockRuleProvider()
     selected_provider = provider_name or settings.ai_provider
     if selected_provider == "local-nlp":
         from .local_nlp import LocalNLPProvider
@@ -546,8 +794,10 @@ def build_provider(settings: Settings, provider_name: str | None = None) -> Anal
         try:
             from .local_nlp import LocalNLPProvider
 
-            fallback = LocalNLPProvider(settings)
+            fallback: AnalysisProvider = LocalNLPProvider(settings)
         except Exception:
-            pass
+            fallback = RuleSupportProvider()
         return OpenAICompatibleProvider(settings=settings, fallback=fallback)
-    return fallback
+    from .local_nlp import LocalNLPProvider
+
+    return LocalNLPProvider(settings)

@@ -23,11 +23,10 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 批改方式
 
-系统提供以下三种分析方式：
+系统提供以下两种分析方式：
 
 - `local-nlp`：NLTK 语法检查 + Hugging Face 中文 BERT 语义分析与作文评分。
 - `openai-compatible`：调用 Moonshot 等兼容 OpenAI Chat Completions 协议的外部 API。
-- `mock`：无需模型的轻量规则模式，适合功能演示和接口测试。
 
 ## 配置外接 API
 

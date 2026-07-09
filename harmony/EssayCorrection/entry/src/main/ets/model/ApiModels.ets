@@ -50,6 +50,48 @@ export class WritingPromptCreatePayload {
   }
 }
 
+export class ClassCreatePayload {
+  name: string = '';
+
+  static create(name: string): ClassCreatePayload {
+    const payload = new ClassCreatePayload();
+    payload.name = name;
+    return payload;
+  }
+}
+
+export class ClassJoinPayload {
+  invite_code: string = '';
+
+  static create(inviteCode: string): ClassJoinPayload {
+    const payload = new ClassJoinPayload();
+    payload.invite_code = inviteCode;
+    return payload;
+  }
+}
+
+export class ClassOut {
+  id: string = '';
+  name: string = '';
+  invite_code: string = '';
+  teacher_id: string = '';
+  created_at: string = '';
+  updated_at: string = '';
+  student_count: number = 0;
+
+  static demo(): ClassOut {
+    const item = new ClassOut();
+    item.id = 'class-demo-1';
+    item.name = '演示班级';
+    item.invite_code = 'CLASS2026';
+    item.teacher_id = 'teacher-1';
+    item.created_at = '2026-07-06T00:00:00Z';
+    item.updated_at = '2026-07-06T00:00:00Z';
+    item.student_count = 1;
+    return item;
+  }
+}
+
 export class WritingPromptOut {
   id: string = '';
   title: string = '';
@@ -141,8 +183,8 @@ export class AnalysisJobOut {
   id: string = '';
   essay_id: string = '';
   status: string = 'queued';
-  provider: string = 'mock';
-  model: string = 'mock-v1';
+  provider: string = 'local-nlp';
+  model: string = 'uer/chinese_roberta_L-2_H-128';
   started_at: string = '';
   finished_at: string | undefined = undefined;
   latency_ms: number = 0;
@@ -153,8 +195,8 @@ export class AnalysisJobOut {
     job.id = 'demo-job-1';
     job.essay_id = essayId;
     job.status = 'completed';
-    job.provider = 'mock';
-    job.model = 'mock-v1';
+    job.provider = 'local-nlp';
+    job.model = 'uer/chinese_roberta_L-2_H-128';
     job.started_at = '2026-07-06T00:00:00Z';
     job.finished_at = '2026-07-06T00:00:01Z';
     job.latency_ms = 18;
@@ -232,6 +274,9 @@ export class RewriteSuggestion {
   rationale: string = '';
   improvement: string = '';
   issue_text: string = '';
+  category: string = '语言表达';
+  scope: string = 'sentence';
+  priority: string = 'medium';
   paragraph_index: number = 0;
   sentence_index: number = 0;
   start: number = -1;
@@ -247,6 +292,9 @@ export class RewriteSuggestion {
     suggestion.rationale = rationale;
     suggestion.improvement = improvement;
     suggestion.issue_text = issueText;
+    suggestion.category = '语言表达';
+    suggestion.scope = 'sentence';
+    suggestion.priority = 'medium';
     suggestion.paragraph_index = paragraphIndex;
     suggestion.sentence_index = sentenceIndex;
     suggestion.start = start;
@@ -311,18 +359,18 @@ export class ExampleOut {
 }
 
 export class ProviderMeta {
-  provider: string = 'mock';
-  model: string = 'mock-v1';
-  version: string = 'mock-rules';
+  provider: string = 'local-nlp';
+  model: string = 'uer/chinese_roberta_L-2_H-128';
+  version: string = 'nltk-bert';
   latency_ms: number = 0;
   fallback_used: boolean = false;
   errors: string[] = [];
 
   static demo(): ProviderMeta {
     const meta = new ProviderMeta();
-    meta.provider = 'mock';
-    meta.model = 'mock-v1';
-    meta.version = 'mock-rules-2026-07-06';
+    meta.provider = 'local-nlp';
+    meta.model = 'uer/chinese_roberta_L-2_H-128';
+    meta.version = 'nltk-bert-2026-07-08';
     meta.latency_ms = 18;
     meta.fallback_used = true;
     meta.errors = ['后端不可用时显示本地演示结果'];
@@ -428,8 +476,8 @@ export class ReportOverview {
 
   static demoList(): ReportOverview[] {
     return [
-      ReportOverview.create('demo-essay-1', 'prompt-growth-choice', '一次选择', '一次选择', '2026-07-06T00:00:00Z', 'analyzed', 84, 100, 'mock', 18),
-      ReportOverview.create('demo-essay-2', 'prompt-family-responsibility', '亲情与责任', '旧伞下的新路', '2026-07-05T00:00:00Z', 'analyzed', 87, 100, 'mock', 16)
+      ReportOverview.create('demo-essay-1', 'prompt-growth-choice', '一次选择', '一次选择', '2026-07-06T00:00:00Z', 'analyzed', 84, 100, 'local-nlp', 18),
+      ReportOverview.create('demo-essay-2', 'prompt-family-responsibility', '亲情与责任', '旧伞下的新路', '2026-07-05T00:00:00Z', 'analyzed', 87, 100, 'local-nlp', 16)
     ];
   }
 }

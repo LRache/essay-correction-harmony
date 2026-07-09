@@ -60,7 +60,7 @@ def overlaps(predicted: tuple[int, int], expected: tuple[int, int]) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate grammar accuracy, human-score correlation and latency.")
     parser.add_argument("dataset", type=Path, help="Canonical CSV: title,prompt,content,human_score,grammar_spans")
-    parser.add_argument("--provider", choices=["local-nlp", "mock", "openai-compatible"], default="local-nlp")
+    parser.add_argument("--provider", choices=["local-nlp", "openai-compatible"], default="local-nlp")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--fail-below-target", action="store_true")
     args = parser.parse_args()

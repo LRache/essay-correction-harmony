@@ -1,5 +1,6 @@
 import {
   AnalysisReport,
+  ClassOut,
   EssayOut,
   ExampleOut,
   MaterialSuggestion,
@@ -43,9 +44,15 @@ struct Index {
   @State writingPrompts: WritingPromptOut[] = [];
   @State selectedPrompt: WritingPromptOut = new WritingPromptOut();
   @State isStudentWritingVisible: boolean = false;
+  @State classList: ClassOut[] = [];
+  @State classInviteCode: string = '';
+  @State teacherClassNameText: string = '九年级一班';
   @State teacherEssays: TeacherEssayOut[] = [];
   @State selectedTeacherEssay: TeacherEssayOut = new TeacherEssayOut();
   @State isTeacherReviewVisible: boolean = false;
+  @State teacherMachineReport: AnalysisReport = new AnalysisReport();
+  @State isTeacherMachineReportVisible: boolean = false;
+  @State isTeacherMachineReportLoading: boolean = false;
   @State teacherPromptTitleText: string = '校园里的温暖';
   @State teacherPromptText: string = '请围绕校园生活中的温暖瞬间写一篇记叙文。';
   @State reviewScore: string = '88';
@@ -119,6 +126,10 @@ struct Index {
           this.ExamplesPanel()
         }.tabBar('范文')
 
+        TabContent() {
+          this.StudentClassPanel()
+        }.tabBar('班级')
+
       }
       .onChange((index: number) => {
         this.currentTab = index;
@@ -133,6 +144,9 @@ struct Index {
         if (index === 2) {
           this.loadExamples();
         }
+        if (index === 3) {
+          this.loadClasses();
+        }
       })
       .width('100%')
       .height('100%')
@@ -146,6 +160,10 @@ struct Index {
     Column() {
       Tabs({ barPosition: BarPosition.End, index: this.teacherTab, controller: this.teacherTabsController }) {
         TabContent() {
+          this.TeacherClassPanel()
+        }.tabBar('班级')
+
+        TabContent() {
           this.TeacherPromptPanel()
         }.tabBar('出题')
 
@@ -157,9 +175,13 @@ struct Index {
         this.teacherTab = index;
         if (index === 0) {
           this.isTeacherReviewVisible = false;
-          this.loadWritingPrompts();
+          this.loadClasses();
         }
         if (index === 1) {
+          this.isTeacherReviewVisible = false;
+          this.loadWritingPrompts();
+        }
+        if (index === 2) {
           this.isTeacherReviewVisible = false;
           this.loadTeacherEssays();
         }
@@ -309,6 +331,43 @@ struct Index {
   }
 
   @Builder
+  StudentClassPanel() {
+    Scroll() {
+      Column({ space: 12 }) {
+        this.SectionTitle('加入班级')
+        TextInput({ placeholder: '请输入老师提供的邀请码', text: this.classInviteCode })
+          .onChange((value: string) => {
+            this.classInviteCode = value;
+          })
+          .width('100%')
+        Button('加入班级')
+          .width('100%')
+          .backgroundColor('#1E6B5C')
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.joinClass();
+          })
+
+        this.SectionTitle('我的班级')
+        if (this.classList.length === 0) {
+          Text('暂无已加入班级')
+            .fontSize(14)
+            .fontColor('#64748B')
+            .width('100%')
+            .padding(14)
+            .backgroundColor('#FFFFFF')
+            .borderRadius(8)
+        }
+        ForEach(this.classList, (item: ClassOut) => {
+          this.ClassCard(item, false)
+        }, (item: ClassOut) => item.id)
+      }
+      .width('100%')
+      .padding(18)
+    }
+  }
+
+  @Builder
   StudentWritingPanel() {
     Scroll() {
       Column({ space: 12 }) {
@@ -318,6 +377,21 @@ struct Index {
           .fontColor('#162033')
           .width('100%')
           .textAlign(TextAlign.Start)
+
+        this.SectionTitle('提交方式')
+        this.CustomPromptCard()
+        if (this.writingPrompts.length === 0) {
+          Text('加入班级后可查看老师发布的题目')
+            .fontSize(14)
+            .fontColor('#64748B')
+            .width('100%')
+            .padding(14)
+            .backgroundColor('#FFFFFF')
+            .borderRadius(8)
+        }
+        ForEach(this.writingPrompts, (item: WritingPromptOut) => {
+          this.WritingPromptSelectCard(item)
+        }, (item: WritingPromptOut) => item.id)
 
         Text('作文要求')
           .fontSize(14)
@@ -480,7 +554,7 @@ struct Index {
 
         this.SectionTitle('改写建议')
         if (this.report.suggestions.length === 0) {
-          Text('未发现能够给出可靠完整改写的句子。系统已过滤仅定位到单个字符、但无法确定正确改法的建议。')
+          Text('暂无可定位的完整改写建议。可以结合维度评分和素材建议继续润色。')
             .fontSize(13)
             .fontColor('#64748B')
             .width('100%')
@@ -528,6 +602,43 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  TeacherClassPanel() {
+    Scroll() {
+      Column({ space: 12 }) {
+        this.SectionTitle('创建班级')
+        TextInput({ placeholder: '班级名称', text: this.teacherClassNameText })
+          .onChange((value: string) => {
+            this.teacherClassNameText = value;
+          })
+          .width('100%')
+        Button('创建班级')
+          .width('100%')
+          .backgroundColor('#1E6B5C')
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.createClass();
+          })
+
+        this.SectionTitle('我的班级')
+        if (this.classList.length === 0) {
+          Text('暂无班级')
+            .fontSize(14)
+            .fontColor('#64748B')
+            .width('100%')
+            .padding(14)
+            .backgroundColor('#FFFFFF')
+            .borderRadius(8)
+        }
+        ForEach(this.classList, (item: ClassOut) => {
+          this.ClassCard(item, true)
+        }, (item: ClassOut) => item.id)
+      }
+      .width('100%')
+      .padding(18)
+    }
   }
 
   @Builder
@@ -611,6 +722,7 @@ struct Index {
         .alignItems(VerticalAlign.Center)
 
         this.TeacherEssayDetailCard(this.selectedTeacherEssay)
+        this.TeacherMachineReportPanel()
         this.SectionTitle('人工批改')
         TextInput({ placeholder: '分数', text: this.reviewScore })
           .onChange((value: string) => {
@@ -637,6 +749,83 @@ struct Index {
   }
 
   @Builder
+  TeacherMachineReportPanel() {
+    Column({ space: 10 }) {
+      this.SectionTitle('机器批改报告')
+      if (this.isTeacherMachineReportLoading) {
+        Text('正在加载机器批改报告...')
+          .fontSize(14)
+          .fontColor('#64748B')
+          .width('100%')
+          .padding(14)
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+      } else if (!this.isTeacherMachineReportVisible) {
+        Text('暂无机器批改报告，老师可先根据作文内容进行人工批改。')
+          .fontSize(14)
+          .fontColor('#64748B')
+          .width('100%')
+          .padding(14)
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+      } else {
+        Row() {
+          Column() {
+            Text('机器评分')
+              .fontSize(13)
+              .fontColor('#64748B')
+            Text(`${this.teacherMachineReport.total_score}/${this.teacherMachineReport.max_score}`)
+              .fontSize(28)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#1E6B5C')
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('50%')
+          Column() {
+            Text('批改服务')
+              .fontSize(13)
+              .fontColor('#64748B')
+              .textAlign(TextAlign.End)
+              .width('100%')
+            Text(this.teacherMachineReport.provider.provider)
+              .fontSize(14)
+              .fontColor('#334155')
+              .textAlign(TextAlign.End)
+              .width('100%')
+          }
+          .alignItems(HorizontalAlign.End)
+          .width('50%')
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+
+        ForEach(this.teacherMachineReport.dimensions, (item: ScoreDimension) => {
+          this.DimensionRow(item)
+        }, (item: ScoreDimension) => item.name)
+
+        this.SectionTitle('机器改写建议')
+        if (this.teacherMachineReport.suggestions.length === 0) {
+          Text('暂无可定位的完整改写建议。')
+            .fontSize(13)
+            .fontColor('#64748B')
+            .width('100%')
+            .padding(12)
+            .backgroundColor('#FFFFFF')
+            .borderRadius(8)
+        } else {
+          ForEach(this.teacherMachineReport.suggestions, (suggestion: RewriteSuggestion) => {
+            this.SuggestionRow(suggestion)
+          }, (suggestion: RewriteSuggestion) => suggestion.issue_id)
+        }
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+  }
+
+  @Builder
   SectionTitle(text: string) {
     Text(text)
       .fontSize(16)
@@ -644,6 +833,71 @@ struct Index {
       .fontColor('#162033')
       .width('100%')
       .margin({ top: 4 })
+  }
+
+  @Builder
+  ClassCard(item: ClassOut, showInviteCode: boolean) {
+    Column({ space: 8 }) {
+      Row() {
+        Text(item.name)
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#162033')
+          .width('60%')
+        Text(`${item.student_count} 名学生`)
+          .fontSize(12)
+          .fontColor('#1E6B5C')
+          .textAlign(TextAlign.End)
+          .width('40%')
+      }
+      .width('100%')
+      if (showInviteCode) {
+        Text(`邀请码：${item.invite_code}`)
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#2563EB')
+      }
+      Text(`创建时间：${item.created_at}`)
+        .fontSize(12)
+        .fontColor('#64748B')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(14)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
+  }
+
+  @Builder
+  CustomPromptCard() {
+    Column({ space: 6 }) {
+      Row() {
+        Text('自拟题目')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#162033')
+          .width('70%')
+        Text(this.selectedPrompt.id.length === 0 ? '已选择' : '选择')
+          .fontSize(12)
+          .fontColor('#2563EB')
+          .textAlign(TextAlign.End)
+          .width('30%')
+      }
+      .width('100%')
+      Text('自行填写作文要求和正文，仅生成批改报告，不提交给老师。')
+        .fontSize(13)
+        .fontColor('#475569')
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(14)
+    .backgroundColor(this.selectedPrompt.id.length === 0 ? '#ECFDF5' : '#FFFFFF')
+    .borderRadius(8)
+    .onClick(() => {
+      this.useCustomPrompt();
+    })
   }
 
   @Builder
@@ -681,7 +935,7 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor('#162033')
           .width('70%')
-        Text('进入作答')
+        Text(this.selectedPrompt.id === item.id ? '已选择' : '选择')
           .fontSize(12)
           .fontColor('#2563EB')
           .textAlign(TextAlign.End)
@@ -695,7 +949,7 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding(14)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(this.selectedPrompt.id === item.id ? '#ECFDF5' : '#FFFFFF')
     .borderRadius(8)
     .onClick(() => {
       this.openStudentWriting(item);
@@ -845,6 +1099,17 @@ struct Index {
   @Builder
   SuggestionRow(item: RewriteSuggestion) {
     Column({ space: 6 }) {
+      Row({ space: 8 }) {
+        Text((item.category ?? '').length > 0 ? item.category : '语言表达')
+          .fontSize(13)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#1E6B5C')
+          .layoutWeight(1)
+        Text((item.priority ?? '').length > 0 ? item.priority : 'medium')
+          .fontSize(12)
+          .fontColor('#B45309')
+      }
+      .width('100%')
       Text(`修改位置：第 ${item.paragraph_index} 段，第 ${item.sentence_index} 句`)
         .fontSize(13)
         .fontWeight(FontWeight.Bold)
@@ -854,19 +1119,23 @@ struct Index {
           .fontSize(12)
           .fontColor('#B45309')
       }
-      Text('原句')
-        .fontSize(12)
-        .fontColor('#64748B')
-      Text(item.original ?? '')
-        .fontSize(13)
-        .fontColor('#64748B')
-      Text('修改后')
-        .fontSize(12)
-        .fontColor('#64748B')
-      Text(item.rewrite ?? '')
-        .fontSize(14)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#1E6B5C')
+      if (this.hasRewriteExample(item)) {
+        Text('修改后例句')
+          .fontSize(12)
+          .fontColor('#64748B')
+        Text(item.rewrite ?? '')
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#1E6B5C')
+      } else {
+        Text('修改建议')
+          .fontSize(12)
+          .fontColor('#64748B')
+        Text(this.suggestionAdviceText(item))
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#1E6B5C')
+      }
       Text(`修改原因：${item.rationale ?? ''}`)
         .fontSize(12)
         .fontColor('#475569')
@@ -1015,6 +1284,7 @@ struct Index {
         this.teacherTab = 0;
         this.isTeacherReviewVisible = false;
         this.selectedTeacherEssay = new TeacherEssayOut();
+        this.loadClasses();
         this.loadWritingPrompts();
         this.loadTeacherEssays();
       } else {
@@ -1023,6 +1293,8 @@ struct Index {
         this.isReportDetailVisible = false;
         this.reportOverviews = [];
         this.reportGroups = [];
+        this.loadClasses();
+        this.loadWritingPrompts();
         this.loadReportOverviews();
         this.loadExamples();
       }
@@ -1051,9 +1323,15 @@ struct Index {
     this.writingPrompts = [];
     this.selectedPrompt = new WritingPromptOut();
     this.isStudentWritingVisible = false;
+    this.classList = [];
+    this.classInviteCode = '';
+    this.teacherClassNameText = '九年级一班';
     this.teacherEssays = [];
     this.selectedTeacherEssay = new TeacherEssayOut();
     this.isTeacherReviewVisible = false;
+    this.teacherMachineReport = new AnalysisReport();
+    this.isTeacherMachineReportVisible = false;
+    this.isTeacherMachineReportLoading = false;
   }
 
   private async submitAndAnalyze(): Promise<void> {
@@ -1078,8 +1356,10 @@ struct Index {
     this.isAnalyzing = true;
     try {
       this.statusText = '正在提交作文...';
-      const generatedTitle: string = normalizedPrompt.length > 18 ? `${normalizedPrompt.substring(0, 18)}…` : normalizedPrompt;
-      const created: EssayOut = await ApiClient.submitEssay('', generatedTitle, normalizedPrompt, normalizedEssay);
+      const promptId: string = this.selectedPrompt.id.length > 0 ? this.selectedPrompt.id : '';
+      const generatedTitle: string = this.selectedPrompt.title.length > 0 ? this.selectedPrompt.title :
+        (normalizedPrompt.length > 18 ? `${normalizedPrompt.substring(0, 18)}…` : normalizedPrompt);
+      const created: EssayOut = await ApiClient.submitEssay(promptId, generatedTitle, normalizedPrompt, normalizedEssay);
       this.essay = created;
       this.statusText = '正在生成批改报告...';
       await ApiClient.analyzeEssay(created.id, provider);
@@ -1114,10 +1394,6 @@ struct Index {
     try {
       const fetched: WritingPromptOut[] = await ApiClient.listWritingPrompts();
       this.writingPrompts = this.mergeWritingPrompts(fetched, this.writingPrompts);
-      if (this.writingPrompts.length > 0 && this.selectedPrompt.id.length === 0) {
-        const first: WritingPromptOut = this.writingPrompts[0];
-        this.selectWritingPrompt(first);
-      }
     } catch (e) {
       this.handleRequestFailure();
     }
@@ -1144,14 +1420,58 @@ struct Index {
     }
   }
 
+  private async loadClasses(): Promise<void> {
+    try {
+      this.classList = await ApiClient.listClasses();
+    } catch (e) {
+      this.handleRequestFailure();
+    }
+  }
+
+  private async createClass(): Promise<void> {
+    const name: string = this.teacherClassNameText.trim();
+    if (name.length === 0) {
+      this.statusText = '请填写班级名称';
+      return;
+    }
+    try {
+      const created: ClassOut = await ApiClient.createClass(name);
+      this.classList = this.mergeClasses([created], this.classList);
+      this.teacherClassNameText = '';
+      this.statusText = `班级已创建，邀请码：${created.invite_code}`;
+    } catch (e) {
+      this.handleRequestFailure();
+    }
+  }
+
+  private async joinClass(): Promise<void> {
+    const inviteCode: string = this.classInviteCode.trim();
+    if (inviteCode.length === 0) {
+      this.statusText = '请输入班级邀请码';
+      return;
+    }
+    try {
+      const joined: ClassOut = await ApiClient.joinClass(inviteCode);
+      this.classList = this.mergeClasses([joined], this.classList);
+      this.classInviteCode = '';
+      this.statusText = `已加入班级：${joined.name}`;
+      this.loadWritingPrompts();
+    } catch (e) {
+      this.handleRequestFailure();
+    }
+  }
+
   private openStudentWriting(item: WritingPromptOut): void {
     this.selectWritingPrompt(item);
     this.isStudentWritingVisible = true;
     this.statusText = `正在作答：${item.title}`;
   }
 
-  private openTeacherReview(item: TeacherEssayOut): void {
+  private async openTeacherReview(item: TeacherEssayOut): Promise<void> {
     this.selectedTeacherEssay = item;
+    this.teacherMachineReport = new AnalysisReport();
+    this.isTeacherMachineReportVisible = false;
+    this.isTeacherMachineReportLoading = item.report_available;
     const review: TeacherReviewOut | undefined = item.teacher_review ?? undefined;
     if (review !== undefined) {
       this.reviewScore = `${review.score}`;
@@ -1162,6 +1482,19 @@ struct Index {
     }
     this.isTeacherReviewVisible = true;
     this.statusText = `正在批改：${item.essay.title}`;
+    if (item.report_available) {
+      try {
+        const loaded: AnalysisReport = await ApiClient.getReport(item.essay.id);
+        this.teacherMachineReport = loaded;
+        this.isTeacherMachineReportVisible = true;
+        this.statusText = `正在批改：${item.essay.title}`;
+      } catch (e) {
+        this.isTeacherMachineReportVisible = false;
+        this.statusText = '机器报告加载失败，可继续人工批改';
+      } finally {
+        this.isTeacherMachineReportLoading = false;
+      }
+    }
   }
 
   private async openReport(item: ReportOverview): Promise<void> {
@@ -1229,6 +1562,75 @@ struct Index {
     return next;
   }
 
+  private mergeClasses(primary: ClassOut[], secondary: ClassOut[]): ClassOut[] {
+    const next: ClassOut[] = [];
+    for (let index = 0; index < primary.length; index++) {
+      next.push(primary[index]);
+    }
+    for (let index = 0; index < secondary.length; index++) {
+      const item: ClassOut = secondary[index];
+      let exists: boolean = false;
+      for (let foundIndex = 0; foundIndex < next.length; foundIndex++) {
+        const current: ClassOut = next[foundIndex];
+        if (current.id === item.id) {
+          exists = true;
+        }
+      }
+      if (!exists) {
+        next.push(item);
+      }
+    }
+    return next;
+  }
+
+  private hasRewriteExample(item: RewriteSuggestion): boolean {
+    const rewrite: string = (item.rewrite ?? '').trim();
+    const original: string = (item.original ?? '').trim();
+    if (rewrite.length === 0 || rewrite === original) {
+      return false;
+    }
+    if (rewrite.indexOf('可以') >= 0 || rewrite.indexOf('建议') >= 0 || rewrite.indexOf('例如') >= 0) {
+      return false;
+    }
+    return (item.scope ?? '') === 'sentence' || rewrite.endsWith('。') || rewrite.endsWith('！') || rewrite.endsWith('？');
+  }
+
+  private suggestionAdviceText(item: RewriteSuggestion): string {
+    const rewrite: string = (item.rewrite ?? '').trim();
+    const original: string = (item.original ?? '').trim();
+    if (this.hasRewriteExample(item) || original.length === 0) {
+      return rewrite;
+    }
+    const originalWithoutEnd: string = this.trimSentenceEnd(original);
+    let advice: string = rewrite;
+    if (advice.indexOf(original) === 0) {
+      advice = advice.substring(original.length).trim();
+    } else if (originalWithoutEnd.length > 0 && advice.indexOf(originalWithoutEnd) === 0) {
+      advice = advice.substring(originalWithoutEnd.length).trim();
+    }
+    advice = this.trimLeadingPunctuation(advice);
+    return advice.length > 0 ? advice : rewrite;
+  }
+
+  private trimSentenceEnd(value: string): string {
+    let next: string = value.trim();
+    while (next.endsWith('。') || next.endsWith('！') || next.endsWith('？') ||
+      next.endsWith('!') || next.endsWith('?')) {
+      next = next.substring(0, next.length - 1).trim();
+    }
+    return next;
+  }
+
+  private trimLeadingPunctuation(value: string): string {
+    let next: string = value.trim();
+    while (next.startsWith('。') || next.startsWith('，') || next.startsWith('；') ||
+      next.startsWith('：') || next.startsWith(',') || next.startsWith(';') ||
+      next.startsWith(':')) {
+      next = next.substring(1).trim();
+    }
+    return next;
+  }
+
   private rebuildReportGroups(): void {
     const groups: ReportPromptGroup[] = [];
     for (let index = 0; index < this.reportOverviews.length; index++) {
@@ -1261,6 +1663,13 @@ struct Index {
     this.selectedPrompt = item;
     this.titleText = item.title;
     this.promptText = item.prompt;
+  }
+
+  private useCustomPrompt(): void {
+    this.selectedPrompt = new WritingPromptOut();
+    this.titleText = '';
+    this.promptText = '';
+    this.statusText = '自拟题目只生成批改报告';
   }
 
   private async createTeacherPrompt(): Promise<void> {

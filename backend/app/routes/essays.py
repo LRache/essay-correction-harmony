@@ -27,7 +27,7 @@ def _normalize_legacy_external_fallback(report: AnalysisReport) -> AnalysisRepor
 
 def _clean_legacy_suggestions(report: AnalysisReport, content: str) -> AnalysisReport:
     """Normalize persisted suggestions and replace obsolete placeholder comments."""
-    from ..analysis.providers import MockRuleProvider, OpenAICompatibleProvider
+    from ..analysis.providers import OpenAICompatibleProvider, RuleSupportProvider
 
     report.suggestions = OpenAICompatibleProvider._sanitize_suggestions(content, report.suggestions)
     placeholder_comments = (
@@ -37,7 +37,7 @@ def _clean_legacy_suggestions(report: AnalysisReport, content: str) -> AnalysisR
     )
     if any(not item.comment.strip() or any(text in item.comment for text in placeholder_comments) for item in report.dimensions):
         actionable_issues = [issue for issue in report.grammar_issues if issue.issue_type != "bert_grammar"]
-        generated = MockRuleProvider()._dimensions(
+        generated = RuleSupportProvider()._dimensions(
             report.prompt,
             content,
             actionable_issues,
@@ -56,7 +56,22 @@ def _load_essay_or_404(db: Database, essay_id: str, user: UserOut) -> EssayOut:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Essay not found")
     essay = essay_from_row(row)
-    if user.role != "teacher" and essay.student_id != user.id:
+    if user.role == "teacher":
+        class_row = db.one(
+            """
+            SELECT cm.id
+            FROM class_members cm
+            JOIN classes c ON c.id = cm.class_id
+            JOIN writing_prompts wp ON wp.id = ?
+            WHERE cm.student_id = ? AND c.teacher_id = ?
+              AND wp.created_by = c.teacher_id
+            LIMIT 1
+            """,
+            (essay.prompt_id, essay.student_id, user.id),
+        )
+        if class_row is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Essay is not visible to this user")
+    elif essay.student_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Essay is not visible to this user")
     return essay
 
@@ -78,6 +93,18 @@ def create_essay(
         prompt_row = db.one("SELECT * FROM writing_prompts WHERE id = ?", (prompt_id,))
         if prompt_row is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Writing prompt not found")
+        class_row = db.one(
+            """
+            SELECT cm.id
+            FROM class_members cm
+            JOIN classes c ON c.id = cm.class_id
+            WHERE cm.student_id = ? AND c.teacher_id = ?
+            LIMIT 1
+            """,
+            (user.id, prompt_row["created_by"]),
+        )
+        if class_row is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Writing prompt is not visible to this student")
         title = prompt_row["title"]
         prompt = prompt_row["prompt"]
     db.execute(
@@ -102,9 +129,25 @@ def get_essay(
 @router.get("/writing-prompts", response_model=list[WritingPromptOut])
 def list_writing_prompts(
     db: Database = Depends(get_db),
-    _: UserOut = Depends(current_user),
+    user: UserOut = Depends(current_user),
 ) -> list[WritingPromptOut]:
-    rows = db.all("SELECT * FROM writing_prompts ORDER BY created_at DESC, title")
+    if user.role == "teacher":
+        rows = db.all(
+            "SELECT * FROM writing_prompts WHERE created_by = ? ORDER BY created_at DESC, title",
+            (user.id,),
+        )
+    else:
+        rows = db.all(
+            """
+            SELECT DISTINCT wp.*
+            FROM writing_prompts wp
+            JOIN classes c ON c.teacher_id = wp.created_by
+            JOIN class_members cm ON cm.class_id = c.id
+            WHERE cm.student_id = ?
+            ORDER BY wp.created_at DESC, wp.title
+            """,
+            (user.id,),
+        )
     return [writing_prompt_from_row(row) for row in rows]
 
 
@@ -119,13 +162,7 @@ def create_analysis_job(
     essay = _load_essay_or_404(db, essay_id, user)
     settings = request.app.state.settings
     requested_provider = payload.provider if payload is not None else settings.ai_provider
-    requested_model = (
-        "mock-v1"
-        if requested_provider == "mock"
-        else settings.local_bert_model
-        if requested_provider == "local-nlp"
-        else settings.ai_model
-    )
+    requested_model = settings.local_bert_model if requested_provider == "local-nlp" else settings.ai_model
     providers: dict[str, AnalysisProvider] = request.app.state.analysis_providers
     provider = providers.get(requested_provider)
     if provider is None:
@@ -213,7 +250,18 @@ def list_reports(
     user: UserOut = Depends(current_user),
 ) -> list[ReportOverview]:
     if user.role == "teacher":
-        essay_rows = db.all("SELECT * FROM essays ORDER BY created_at DESC")
+        essay_rows = db.all(
+            """
+            SELECT DISTINCT e.*
+            FROM essays e
+            JOIN writing_prompts wp ON wp.id = e.prompt_id
+            JOIN class_members cm ON cm.student_id = e.student_id
+            JOIN classes c ON c.id = cm.class_id
+            WHERE c.teacher_id = ? AND wp.created_by = ?
+            ORDER BY e.created_at DESC
+            """,
+            (user.id, user.id),
+        )
     else:
         essay_rows = db.all("SELECT * FROM essays WHERE student_id = ? ORDER BY created_at DESC", (user.id,))
 

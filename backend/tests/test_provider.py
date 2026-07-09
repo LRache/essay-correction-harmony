@@ -4,7 +4,7 @@ import json
 import urllib.request
 
 from app.analysis.local_nlp import LocalNLPProvider, NltkChineseGrammarChecker
-from app.analysis.providers import MockRuleProvider, OpenAICompatibleProvider
+from app.analysis.providers import OpenAICompatibleProvider, RuleSupportProvider
 from app.config import Settings
 from app.schemas import GrammarIssue, RewriteSuggestion
 
@@ -47,7 +47,7 @@ def test_openai_provider_builds_server_owned_report(monkeypatch) -> None:
         ai_api_key="test-key",
         ai_model="test-model",
     )
-    provider = OpenAICompatibleProvider(settings, MockRuleProvider())
+    provider = OpenAICompatibleProvider(settings, RuleSupportProvider())
 
     report = provider.analyze("essay-1", "标题", "要求", "作文正文。", [])
 
@@ -63,14 +63,14 @@ def test_openai_provider_preserves_requested_provider_when_falling_back() -> Non
         ai_provider="openai-compatible", ai_base_url="", ai_api_key="", ai_model="moonshot-test",
     )
 
-    report = OpenAICompatibleProvider(settings, MockRuleProvider()).analyze(
+    report = OpenAICompatibleProvider(settings, RuleSupportProvider()).analyze(
         "essay-1", "标题", "作文要求", "这是一篇用于测试降级逻辑的作文正文。", []
     )
 
     assert report.provider.provider == "openai-compatible"
     assert report.provider.model == "moonshot-test"
     assert report.provider.fallback_used is True
-    assert "fallback provider=mock" in report.provider.errors[-1]
+    assert "fallback provider=local-nlp" in report.provider.errors[-1]
 
 
 def test_nltk_checker_returns_character_level_chinese_grammar_issues() -> None:
@@ -103,7 +103,7 @@ def test_local_nlp_provider_has_safe_semantic_fallback() -> None:
 
 
 def test_rewrite_suggestions_are_actionable_and_have_positions() -> None:
-    provider = MockRuleProvider()
+    provider = RuleSupportProvider()
     content = "这是一个重要的的选择。"
     issues = [
         GrammarIssue(
@@ -124,10 +124,57 @@ def test_rewrite_suggestions_are_actionable_and_have_positions() -> None:
     assert suggestions[0].issue_text == "的的"
     assert suggestions[0].paragraph_index == 1
     assert suggestions[0].sentence_index == 1
+    assert suggestions[0].category == "语言表达"
+    assert suggestions[0].scope == "sentence"
     assert suggestions[0].start == 6
     assert suggestions[0].end == 8
     assert "重复助词" in suggestions[0].rationale
     assert suggestions[0].improvement
+
+
+def test_deep_suggestions_include_material_detail_and_theme_feedback() -> None:
+    provider = RuleSupportProvider()
+    prompt = "请以成长中的一次选择为题，写一篇记叙文。"
+    content = (
+        "我想到守株待兔的故事，就决定等机会自己出现。"
+        "老师让我报名时，我很犹豫。"
+        "后来我明白自己应该做出选择。"
+    )
+
+    report = provider.analyze("essay-1", "一次选择", prompt, content, [])
+
+    categories = {suggestion.category for suggestion in report.suggestions}
+    assert "素材与典故" in categories
+    assert "描写细化" in categories
+    allusion = next(suggestion for suggestion in report.suggestions if suggestion.category == "素材与典故")
+    assert allusion.issue_text == "守株待兔"
+    assert allusion.priority == "high"
+    detail = next(suggestion for suggestion in report.suggestions if suggestion.category == "描写细化")
+    assert "动作" in detail.rewrite
+    assert detail.scope == "paragraph"
+
+
+def test_polished_warmth_essay_still_gets_upgrade_suggestion() -> None:
+    provider = RuleSupportProvider()
+    prompt = "请以“藏在细节里的温暖”为题，写一篇记叙文。要求选取真实具体的生活事件，运用动作、语言和心理描写。"
+    content = (
+        "清晨，雨点密密地落在窗户上。母亲追到门口，把一把雨伞塞进我的手里，又蹲下来替我系好松开的鞋带。"
+        "“天气凉，记得把外套穿好。”她叮嘱道。“知道了。”我随口回答，心里却有些不耐烦。"
+        "放学时，雨下得更大了。母亲站在马路对面，裤脚已经湿透，手里还提着一个保温袋。"
+        "袋子里装着一个烤红薯。剥开外皮，热气立刻冒了出来，甜甜的香味驱散了雨天的寒意。"
+        "母亲接过我的书包，又把伞向我这边倾斜。雨水顺着伞沿落下，很快打湿了她的一侧肩膀。"
+        "那一刻，我悄悄把伞推向她，她却又将伞移了回来。"
+        "我第一次明白，那些藏在细节里的温暖始终陪伴着我。"
+    )
+
+    report = provider.analyze("essay-1", "藏在细节里的温暖", prompt, content, [])
+
+    assert report.suggestions
+    suggestion = report.suggestions[0]
+    assert suggestion.category == "描写细化"
+    assert suggestion.issue_text == "可进一步升格"
+    assert suggestion.priority == "low"
+    assert suggestion.rewrite != suggestion.original
 
 
 def test_external_suggestion_filter_removes_noop_generic_and_unlocated_items() -> None:
@@ -182,7 +229,7 @@ def test_external_suggestion_keeps_positioned_character_fix_as_full_sentence() -
 
 
 def test_rewrite_suggestion_locates_paragraph_and_sentence() -> None:
-    provider = MockRuleProvider()
+    provider = RuleSupportProvider()
     content = "开头第一句。开头第二句。\n\n第二段有的的错误。"
     start = content.index("的的")
     issue = GrammarIssue(
@@ -199,7 +246,7 @@ def test_rewrite_suggestion_locates_paragraph_and_sentence() -> None:
 
 
 def test_dimension_comments_are_specific_to_the_essay() -> None:
-    provider = MockRuleProvider()
+    provider = RuleSupportProvider()
     content = "首先，我决定参加比赛。\n后来，我认真完成了训练。"
 
     dimensions = provider._dimensions("请以一次选择为题", content, [], 82.0, 88.0)

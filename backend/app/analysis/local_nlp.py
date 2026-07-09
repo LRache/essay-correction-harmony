@@ -15,7 +15,7 @@ from ..schemas import (
     ProviderMeta,
     SemanticMetric,
 )
-from .providers import AnalysisProvider, MockRuleProvider
+from .providers import AnalysisProvider, RuleSupportProvider
 
 
 @dataclass
@@ -363,7 +363,7 @@ class LocalNLPProvider(AnalysisProvider):
         self.semantic = BertSemanticAnalyzer(settings, self.checker)
         self.scorer = BertEssayScorer(settings.local_scoring_model)
         self.grammar_detector = BertGrammarDetector(settings.local_grammar_model, self.checker)
-        self.rules = MockRuleProvider(model="rule-support-v2")
+        self.rules = RuleSupportProvider(model="rule-support-v2")
         if settings.local_model_warmup:
             try:
                 self.semantic.warmup()
@@ -417,7 +417,8 @@ class LocalNLPProvider(AnalysisProvider):
             total_score=total_score,
             max_score=100,
             dimensions=dimensions,
-            suggestions=self.rules._suggestions(content, actionable_issues),
+            suggestions=self.rules._suggestions(content, actionable_issues)
+            + self.rules._deep_suggestions(prompt, content),
             materials=self.rules._materials(prompt, content),
             examples=examples[:2],
             provider=ProviderMeta(

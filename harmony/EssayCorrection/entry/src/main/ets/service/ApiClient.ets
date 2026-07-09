@@ -1,6 +1,9 @@
 import http from '@ohos.net.http';
 import {
   AnalysisJobOut,
+  ClassCreatePayload,
+  ClassJoinPayload,
+  ClassOut,
   AnalysisJobCreatePayload,
   AnalysisReport,
   EssayCreatePayload,
@@ -18,13 +21,15 @@ import {
 } from '../model/ApiModels';
 
 export class ApiClient {
-  static baseUrl: string = 'http://192.168.31.152:8000';
+  static baseUrl: string = 'http://10.249.42.57:8000';
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
+  static localClasses: ClassOut[] = [];
 
   static logout(): void {
     ApiClient.authToken = '';
+    ApiClient.localClasses = [];
   }
 
   static async login(username: string, password: string): Promise<LoginResponse> {
@@ -54,6 +59,49 @@ export class ApiClient {
     const created = JSON.parse(raw) as WritingPromptOut;
     ApiClient.cacheWritingPrompt(created);
     return created;
+  }
+
+  static async listClasses(): Promise<ClassOut[]> {
+    const raw: string = await ApiClient.request('/classes', http.RequestMethod.GET, undefined, ApiClient.authToken);
+    const fetched = JSON.parse(raw) as ClassOut[];
+    ApiClient.localClasses = ApiClient.mergeClasses(fetched, ApiClient.localClasses);
+    return ApiClient.localClasses;
+  }
+
+  static async createClass(name: string): Promise<ClassOut> {
+    const payload: ClassCreatePayload = ClassCreatePayload.create(name);
+    const raw: string = await ApiClient.request('/classes', http.RequestMethod.POST, payload, ApiClient.authToken);
+    const created = JSON.parse(raw) as ClassOut;
+    ApiClient.localClasses = ApiClient.mergeClasses([created], ApiClient.localClasses);
+    return created;
+  }
+
+  static async joinClass(inviteCode: string): Promise<ClassOut> {
+    const payload: ClassJoinPayload = ClassJoinPayload.create(inviteCode);
+    const raw: string = await ApiClient.request('/classes/join', http.RequestMethod.POST, payload, ApiClient.authToken);
+    const joined = JSON.parse(raw) as ClassOut;
+    ApiClient.localClasses = ApiClient.mergeClasses([joined], ApiClient.localClasses);
+    return joined;
+  }
+
+  private static mergeClasses(primary: ClassOut[], secondary: ClassOut[]): ClassOut[] {
+    const next: ClassOut[] = [];
+    for (let index = 0; index < primary.length; index++) {
+      next.push(primary[index]);
+    }
+    for (let index = 0; index < secondary.length; index++) {
+      const item: ClassOut = secondary[index];
+      let exists: boolean = false;
+      for (let foundIndex = 0; foundIndex < next.length; foundIndex++) {
+        if (next[foundIndex].id === item.id) {
+          exists = true;
+        }
+      }
+      if (!exists) {
+        next.push(item);
+      }
+    }
+    return next;
   }
 
   static cacheWritingPrompt(item: WritingPromptOut): void {

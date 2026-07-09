@@ -26,6 +26,31 @@ class LoginResponse(BaseModel):
     user: UserOut
 
 
+class ClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ClassJoinRequest(BaseModel):
+    invite_code: str = Field(min_length=4, max_length=32)
+
+
+class ClassOut(BaseModel):
+    id: str
+    name: str
+    invite_code: str
+    teacher_id: str
+    created_at: str
+    updated_at: str
+    student_count: int = 0
+
+
+class ClassMemberOut(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    joined_at: str
+
+
 class WritingPromptCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=500)
@@ -89,6 +114,9 @@ class RewriteSuggestion(BaseModel):
     rationale: str
     improvement: str = ""
     issue_text: str = ""
+    category: str = "语言表达"
+    scope: str = "sentence"
+    priority: Literal["low", "medium", "high"] = "medium"
     paragraph_index: int = 1
     sentence_index: int = 1
     start: int = -1
@@ -149,7 +177,7 @@ class ReportOverview(BaseModel):
 
 
 class AnalysisJobCreate(BaseModel):
-    provider: Literal["mock", "local-nlp", "openai-compatible"] = "openai-compatible"
+    provider: Literal["local-nlp", "openai-compatible"] = "local-nlp"
 
 
 class AnalysisJobOut(BaseModel):
