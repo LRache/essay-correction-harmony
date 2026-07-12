@@ -8,7 +8,7 @@ from ..analysis import AnalysisProvider, build_provider
 from ..db import Database, utc_now
 from ..dependencies import current_user, get_db
 from ..schemas import AnalysisJobCreate, AnalysisJobOut, AnalysisReport, EssayCreate, EssayOut, ExampleOut, ReportOverview, UserOut, WritingPromptOut
-from ..serializers import essay_from_row, example_from_row, job_from_row, writing_prompt_from_row
+from ..serializers import essay_from_row, example_from_row, job_from_row, review_from_row, writing_prompt_from_row
 
 router = APIRouter(tags=["essays"])
 
@@ -275,6 +275,7 @@ def list_reports(
         if report_row is None:
             continue
         report = _normalize_legacy_external_fallback(AnalysisReport.model_validate(json.loads(report_row["data_json"])))
+        review_row = db.one("SELECT * FROM teacher_reviews WHERE essay_id = ?", (essay.id,))
         reports.append(
             ReportOverview(
                 essay_id=essay.id,
@@ -287,6 +288,7 @@ def list_reports(
                 max_score=report.max_score,
                 provider=report.provider.provider,
                 latency_ms=report.provider.latency_ms,
+                teacher_review=review_from_row(review_row),
             )
         )
     return reports

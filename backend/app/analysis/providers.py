@@ -631,6 +631,10 @@ class OpenAICompatibleProvider(AnalysisProvider):
                 content_json = content_json.rsplit("```", 1)[0].strip()
             candidate = json.loads(content_json)
             correction = LLMCorrectionResult.model_validate(candidate)
+            # The external model is allowed to improve the report, but it must
+            # not omit sections that the local BERT report always provides.
+            baseline = self.fallback.analyze(essay_id, title, prompt, content, examples)
+            suggestions = self._sanitize_suggestions(content, correction.suggestions)
             # Identity, local examples, and provider metadata are authoritative
             # backend data rather than fields the model should invent.
             report = AnalysisReport(
@@ -643,8 +647,8 @@ class OpenAICompatibleProvider(AnalysisProvider):
                 total_score=correction.total_score,
                 max_score=correction.max_score,
                 dimensions=correction.dimensions,
-                suggestions=self._sanitize_suggestions(content, correction.suggestions),
-                materials=correction.materials,
+                suggestions=suggestions or baseline.suggestions,
+                materials=correction.materials or baseline.materials,
                 examples=examples[:2],
                 provider=ProviderMeta(
                     provider="openai-compatible",
@@ -772,6 +776,16 @@ class OpenAICompatibleProvider(AnalysisProvider):
                         "结构过渡是否清楚、结尾是否扣题等深层角度给出改写建议。"
                         "每条 suggestions 必须填写 category、scope、priority；category 可使用语言表达、素材与典故、描写细化、结构推进、立意扣题。"
                         f"{schema_hint}"
+                    ),
+                },
+                {
+                    "role": "system",
+                    "content": (
+                        "请按照本地 BERT 报告相同的完整性标准批改作文，所有面向用户的文字均使用中文。"
+                        "评分维度必须覆盖内容、表达、结构和主题相关性；必须给出具体、可使用的素材建议。"
+                        "只要作文仍有提升空间，就必须给出可执行的改写建议。每条建议必须引用原文中的精确片段，"
+                        "start/end 必须对应原文字符下标，rewrite 必须提供所在完整句子的改写，"
+                        "rationale 和 improvement 必须分别说明具体问题与改写效果。不得使用泛泛建议，不得虚构原文。"
                     ),
                 },
                 {"role": "user", "content": f"题目：{title}\n要求：{prompt}\n作文：{content}"},

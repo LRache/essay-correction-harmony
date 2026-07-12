@@ -40,6 +40,7 @@ struct Index {
   @State reportOverviews: ReportOverview[] = [];
   @State reportGroups: ReportPromptGroup[] = [];
   @State isReportDetailVisible: boolean = false;
+  @State studentTeacherReview: TeacherReviewOut | undefined = undefined;
   @State examples: ExampleOut[] = [];
   @State writingPrompts: WritingPromptOut[] = [];
   @State selectedPrompt: WritingPromptOut = new WritingPromptOut();
@@ -546,6 +547,37 @@ struct Index {
         .padding(14)
         .backgroundColor('#FFFFFF')
         .borderRadius(8)
+
+        if (this.studentTeacherReview !== undefined) {
+          this.SectionTitle('教师批改')
+          Column({ space: 8 }) {
+            Row() {
+              Text('教师评分')
+                .fontSize(14)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#162033')
+                .layoutWeight(1)
+              Text(`${this.studentTeacherReview.score}/100`)
+                .fontSize(22)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#2563EB')
+            }
+            .width('100%')
+            Text(this.studentTeacherReview.comment)
+              .fontSize(14)
+              .fontColor('#334155')
+              .width('100%')
+            Text(`批改时间：${this.studentTeacherReview.updated_at}`)
+              .fontSize(12)
+              .fontColor('#64748B')
+              .width('100%')
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+          .padding(14)
+          .backgroundColor('#EFF6FF')
+          .borderRadius(8)
+        }
 
         this.SectionTitle('维度评分')
         ForEach(this.report.dimensions, (dimension: ScoreDimension) => {
@@ -1055,6 +1087,12 @@ struct Index {
       Text(`批改服务：${item.provider} · ${item.latency_ms}ms`)
         .fontSize(12)
         .fontColor('#475569')
+      if (item.teacher_review !== undefined && item.teacher_review !== null) {
+        Text(`教师已批改 · ${item.teacher_review.score}/100`)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#2563EB')
+      }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
@@ -1502,9 +1540,10 @@ struct Index {
       this.statusText = `正在打开报告：${item.title}`;
       const loaded: AnalysisReport = await ApiClient.getReport(item.essay_id);
       loaded.essay_id = item.essay_id;
-      loaded.title = item.title;
-      this.report = loaded;
-      this.isReportDetailVisible = true;
+        loaded.title = item.title;
+        this.report = loaded;
+        this.studentTeacherReview = item.teacher_review ?? undefined;
+        this.isReportDetailVisible = true;
       this.statusText = '报告已打开';
     } catch (e) {
       this.handleRequestFailure();

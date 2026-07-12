@@ -174,6 +174,7 @@ class ReportOverview(BaseModel):
     max_score: float
     provider: str
     latency_ms: int
+    teacher_review: "TeacherReviewOut | None" = None
 
 
 class AnalysisJobCreate(BaseModel):
@@ -217,3 +218,4 @@ class TeacherReviewOut(BaseModel):
 
 
 TeacherEssayOut.model_rebuild()
+ReportOverview.model_rebuild()

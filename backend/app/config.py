@@ -15,7 +15,7 @@ class Settings:
     ai_api_key: str
     ai_model: str
     local_bert_model: str = "uer/chinese_roberta_L-2_H-128"
-    local_model_files_only: bool = False
+    local_model_files_only: bool = True
     local_model_warmup: bool = False
     local_scoring_model: str = ""
     local_grammar_model: str = ""
@@ -53,7 +53,10 @@ def load_settings() -> Settings:
         ai_api_key=os.getenv("AI_API_KEY", ""),
         ai_model=os.getenv("AI_MODEL", "openai-compatible-model"),
         local_bert_model=os.getenv("LOCAL_BERT_MODEL", "uer/chinese_roberta_L-2_H-128"),
-        local_model_files_only=os.getenv("LOCAL_MODEL_FILES_ONLY", "false").lower() in {"1", "true", "yes"},
+        # Local analysis must not perform a Hugging Face network check on every
+        # request. A failed check otherwise blocks report generation until the
+        # connection timeout and then unnecessarily falls back to lexical rules.
+        local_model_files_only=os.getenv("LOCAL_MODEL_FILES_ONLY", "true").lower() in {"1", "true", "yes"},
         local_model_warmup=os.getenv("LOCAL_MODEL_WARMUP", "true").lower() in {"1", "true", "yes"},
         local_scoring_model=os.getenv("LOCAL_SCORING_MODEL", str(backend_root / "models" / "aes-scorer")),
         local_grammar_model=os.getenv("LOCAL_GRAMMAR_MODEL", str(backend_root / "models" / "grammar-detector")),

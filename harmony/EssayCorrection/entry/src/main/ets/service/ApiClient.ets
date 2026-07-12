@@ -21,7 +21,7 @@ import {
 } from '../model/ApiModels';
 
 export class ApiClient {
-  static baseUrl: string = 'http://10.249.42.57:8000';
+  static baseUrl: string = 'http://192.168.31.152:8000';
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
@@ -184,6 +184,9 @@ export class ApiClient {
   static async listReportOverviews(): Promise<ReportOverview[]> {
     const raw: string = await ApiClient.request('/reports', http.RequestMethod.GET, undefined, ApiClient.authToken);
     const fetched = JSON.parse(raw) as ReportOverview[];
+    for (let index = 0; index < fetched.length; index++) {
+      fetched[index].teacher_review = fetched[index].teacher_review ?? undefined;
+    }
     ApiClient.localReportOverviews = ApiClient.mergeReportOverviews(fetched, ApiClient.localReportOverviews);
     return ApiClient.localReportOverviews;
   }

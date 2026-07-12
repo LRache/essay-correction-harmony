@@ -58,7 +58,7 @@ uv sync --extra ai --extra dev
 
 ```dotenv
 LOCAL_BERT_MODEL=uer/chinese_roberta_L-2_H-128
-LOCAL_MODEL_FILES_ONLY=false
+LOCAL_MODEL_FILES_ONLY=true
 LOCAL_MODEL_WARMUP=true
 LOCAL_SCORING_MODEL=./models/aes-scorer
 LOCAL_GRAMMAR_MODEL=./models/grammar-detector

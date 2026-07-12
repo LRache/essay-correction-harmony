@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.request
 
-from app.analysis.local_nlp import LocalNLPProvider, NltkChineseGrammarChecker
+from app.analysis.local_nlp import LocalNLPProvider, NltkChineseGrammarChecker, SemanticScores
 from app.analysis.providers import OpenAICompatibleProvider, RuleSupportProvider
 from app.config import Settings
 from app.schemas import GrammarIssue, RewriteSuggestion
@@ -55,6 +55,10 @@ def test_openai_provider_builds_server_owned_report(monkeypatch) -> None:
     assert report.provider.provider == "openai-compatible"
     assert report.provider.model == "test-model"
     assert report.provider.fallback_used is False
+    # Moonshot may return valid JSON while omitting useful optional content.
+    # A successful external report must still be as complete as the BERT path.
+    assert report.suggestions
+    assert report.materials
 
 
 def test_openai_provider_preserves_requested_provider_when_falling_back() -> None:
@@ -100,6 +104,39 @@ def test_local_nlp_provider_has_safe_semantic_fallback() -> None:
     assert report.provider.fallback_used is True
     assert report.coherence.score > 0
     assert report.relevance.score > 0
+
+
+def test_local_nlp_caps_short_gibberish_even_when_aes_predicts_high(monkeypatch) -> None:
+    settings = Settings(
+        database_path=":memory:", jwt_secret="test", token_ttl_seconds=60,
+        ai_provider="local-nlp", ai_base_url="", ai_api_key="", ai_model="unused",
+        local_model_warmup=False,
+    )
+    provider = LocalNLPProvider(settings)
+    monkeypatch.setattr(
+        provider.semantic, "analyze",
+        lambda *_: SemanticScores(coherence=86.0, relevance=92.1, engine="test", errors=[]),
+    )
+    monkeypatch.setattr(provider.scorer, "predict", lambda *_: (85.9, None))
+    monkeypatch.setattr(provider.grammar_detector, "detect", lambda *_: ([], None))
+
+    report = provider.analyze(
+        "essay-1", "校园里的温暖", "请围绕校园生活中的温暖瞬间写一篇记叙文。",
+        "答案是打发打发的地方高大上的工作新东方大师傅似的发生过对方哈哈绕过", [],
+    )
+
+    assert report.total_score == 30.0
+    assert round(sum(item.score for item in report.dimensions), 1) == 30.0
+    assert "有效性检查" in report.dimensions[0].comment
+
+
+def test_quality_gate_does_not_cap_full_length_multi_sentence_essay() -> None:
+    content = "。".join(["清晨我走进校园，看见老师正在帮助同学整理散落的书本" for _ in range(12)]) + "。"
+
+    cap, reason = LocalNLPProvider._quality_score_cap(content)
+
+    assert cap is None
+    assert reason is None
 
 
 def test_rewrite_suggestions_are_actionable_and_have_positions() -> None:

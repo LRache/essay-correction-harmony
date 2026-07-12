@@ -137,7 +137,9 @@ class BertSemanticAnalyzer:
             prompt_vector = self._embed(prompt, tokenizer, model, torch)
             content_vector = self._embed(content[:1800], tokenizer, model, torch)
             coherence_values = [self._cosine(vectors[i], vectors[i + 1], torch) for i in range(len(vectors) - 1)]
-            coherence_raw = sum(coherence_values) / len(coherence_values) if coherence_values else 0.72
+            # A single sentence provides no evidence of discourse coherence.
+            # Keep it neutral-low instead of awarding the old implicit 86/100.
+            coherence_raw = sum(coherence_values) / len(coherence_values) if coherence_values else 0.10
             relevance_raw = self._cosine(prompt_vector, content_vector, torch)
             return SemanticScores(
                 coherence=round(self._normalize_similarity(coherence_raw), 1),
@@ -393,11 +395,15 @@ class LocalNLPProvider(AnalysisProvider):
         dimensions = self.rules._dimensions(prompt, content, actionable_issues, scores.coherence, scores.relevance)
         predicted_score, scoring_error = self.scorer.predict(prompt, content)
         total_score = predicted_score if predicted_score is not None else round(sum(item.score for item in dimensions), 1)
-        if predicted_score is not None:
+        quality_cap, quality_reason = self._quality_score_cap(content)
+        if quality_cap is not None and total_score > quality_cap:
+            total_score = quality_cap
+            dimensions[0].comment = f"有效性检查：{quality_reason}；总分最高按 {quality_cap:.0f} 分计。{dimensions[0].comment}"
+        if predicted_score is not None or quality_cap is not None:
             raw_total = sum(item.score for item in dimensions) or 1
             for dimension in dimensions:
-                dimension.score = round(min(dimension.max_score, dimension.score * predicted_score / raw_total), 1)
-            difference = round(predicted_score - sum(item.score for item in dimensions), 1)
+                dimension.score = round(min(dimension.max_score, dimension.score * total_score / raw_total), 1)
+            difference = round(total_score - sum(item.score for item in dimensions), 1)
             dimensions[-1].score = round(max(0, min(dimensions[-1].max_score, dimensions[-1].score + difference)), 1)
         report = AnalysisReport(
             essay_id=essay_id,
@@ -434,3 +440,19 @@ class LocalNLPProvider(AnalysisProvider):
             ),
         )
         return report
+
+    @staticmethod
+    def _quality_score_cap(content: str) -> tuple[float | None, str | None]:
+        """Prevent an AES regressor from rewarding text outside essay-like input."""
+        compact = "".join(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", content))
+        sentence_count = len([part for part in re.split(r"[。！？!?]+", content) if part.strip()])
+        length = len(compact)
+        if length < 60:
+            return 30.0, f"正文仅约 {length} 字，未达到可评分作文的基本篇幅"
+        if length < 120:
+            return 50.0, f"正文仅约 {length} 字，内容展开明显不足"
+        if length < 200:
+            return 65.0, f"正文仅约 {length} 字，篇幅不足"
+        if sentence_count <= 1:
+            return 40.0, "全文只有一个句子，无法形成完整篇章结构"
+        return None, None

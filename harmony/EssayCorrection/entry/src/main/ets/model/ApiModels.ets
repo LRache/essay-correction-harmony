@@ -432,6 +432,7 @@ export class ReportOverview {
   max_score: number = 100;
   provider: string = '';
   latency_ms: number = 0;
+  teacher_review: TeacherReviewOut | undefined = undefined;
 
   static create(
     essayId: string,

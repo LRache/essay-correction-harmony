@@ -87,6 +87,14 @@ def test_student_submit_analyze_and_teacher_review(tmp_path: Path) -> None:
     assert review_response.status_code == 200
     assert review_response.json()["score"] == 88
 
+    student_overview_response = client.get(
+        "/reports", headers={"Authorization": f"Bearer {student_token}"}
+    )
+    assert student_overview_response.status_code == 200
+    student_review = student_overview_response.json()[0]["teacher_review"]
+    assert student_review["score"] == 88
+    assert student_review["comment"] == "主题明确，建议补充更多细节。"
+
 
 def test_self_assigned_essay_only_creates_student_report(tmp_path: Path) -> None:
     client = make_client(tmp_path)
