@@ -50,6 +50,48 @@ export class WritingPromptCreatePayload {
   }
 }
 
+export class ClassCreatePayload {
+  name: string = '';
+
+  static create(name: string): ClassCreatePayload {
+    const payload = new ClassCreatePayload();
+    payload.name = name;
+    return payload;
+  }
+}
+
+export class ClassJoinPayload {
+  invite_code: string = '';
+
+  static create(inviteCode: string): ClassJoinPayload {
+    const payload = new ClassJoinPayload();
+    payload.invite_code = inviteCode;
+    return payload;
+  }
+}
+
+export class ClassOut {
+  id: string = '';
+  name: string = '';
+  invite_code: string = '';
+  teacher_id: string = '';
+  created_at: string = '';
+  updated_at: string = '';
+  student_count: number = 0;
+
+  static demo(): ClassOut {
+    const item = new ClassOut();
+    item.id = 'class-demo-1';
+    item.name = '演示班级';
+    item.invite_code = 'CLASS2026';
+    item.teacher_id = 'teacher-1';
+    item.created_at = '2026-07-06T00:00:00Z';
+    item.updated_at = '2026-07-06T00:00:00Z';
+    item.student_count = 1;
+    return item;
+  }
+}
+
 export class WritingPromptOut {
   id: string = '';
   title: string = '';
@@ -141,8 +183,8 @@ export class AnalysisJobOut {
   id: string = '';
   essay_id: string = '';
   status: string = 'queued';
-  provider: string = 'mock';
-  model: string = 'mock-v1';
+  provider: string = 'local-nlp';
+  model: string = 'uer/chinese_roberta_L-2_H-128';
   started_at: string = '';
   finished_at: string | undefined = undefined;
   latency_ms: number = 0;
@@ -153,8 +195,8 @@ export class AnalysisJobOut {
     job.id = 'demo-job-1';
     job.essay_id = essayId;
     job.status = 'completed';
-    job.provider = 'mock';
-    job.model = 'mock-v1';
+    job.provider = 'local-nlp';
+    job.model = 'uer/chinese_roberta_L-2_H-128';
     job.started_at = '2026-07-06T00:00:00Z';
     job.finished_at = '2026-07-06T00:00:01Z';
     job.latency_ms = 18;
@@ -230,13 +272,33 @@ export class RewriteSuggestion {
   original: string = '';
   rewrite: string = '';
   rationale: string = '';
+  improvement: string = '';
+  issue_text: string = '';
+  category: string = '语言表达';
+  scope: string = 'sentence';
+  priority: string = 'medium';
+  paragraph_index: number = 0;
+  sentence_index: number = 0;
+  start: number = -1;
+  end: number = -1;
 
-  static create(issueId: string, original: string, rewrite: string, rationale: string): RewriteSuggestion {
+  static create(issueId: string, original: string, rewrite: string, rationale: string,
+    improvement: string = '', issueText: string = '', paragraphIndex: number = 0,
+    sentenceIndex: number = 0, start: number = -1, end: number = -1): RewriteSuggestion {
     const suggestion = new RewriteSuggestion();
     suggestion.issue_id = issueId;
     suggestion.original = original;
     suggestion.rewrite = rewrite;
     suggestion.rationale = rationale;
+    suggestion.improvement = improvement;
+    suggestion.issue_text = issueText;
+    suggestion.category = '语言表达';
+    suggestion.scope = 'sentence';
+    suggestion.priority = 'medium';
+    suggestion.paragraph_index = paragraphIndex;
+    suggestion.sentence_index = sentenceIndex;
+    suggestion.start = start;
+    suggestion.end = end;
     return suggestion;
   }
 }
@@ -297,18 +359,18 @@ export class ExampleOut {
 }
 
 export class ProviderMeta {
-  provider: string = 'mock';
-  model: string = 'mock-v1';
-  version: string = 'mock-rules';
+  provider: string = 'local-nlp';
+  model: string = 'uer/chinese_roberta_L-2_H-128';
+  version: string = 'nltk-bert';
   latency_ms: number = 0;
   fallback_used: boolean = false;
   errors: string[] = [];
 
   static demo(): ProviderMeta {
     const meta = new ProviderMeta();
-    meta.provider = 'mock';
-    meta.model = 'mock-v1';
-    meta.version = 'mock-rules-2026-07-06';
+    meta.provider = 'local-nlp';
+    meta.model = 'uer/chinese_roberta_L-2_H-128';
+    meta.version = 'nltk-bert-2026-07-08';
     meta.latency_ms = 18;
     meta.fallback_used = true;
     meta.errors = ['后端不可用时显示本地演示结果'];
@@ -349,9 +411,7 @@ export class AnalysisReport {
       ScoreDimension.create('主题相关', 22, 25, '扣题意识较强。'),
       ScoreDimension.create('语言表达', 16, 20, '个别表达可精炼。')
     ];
-    report.suggestions = [
-      RewriteSuggestion.create('grammar-duplicate-de', '重要的的选择', '重要的选择', '删除重复助词，让句子更简洁。')
-    ];
+    report.suggestions = [];
     report.materials = [
       MaterialSuggestion.create('成长', '补充一个具体动作，如递出报名表、停顿、回头等。', '把心理变化放在动作后面写。')
     ];
@@ -372,6 +432,7 @@ export class ReportOverview {
   max_score: number = 100;
   provider: string = '';
   latency_ms: number = 0;
+  teacher_review: TeacherReviewOut | undefined = undefined;
 
   static create(
     essayId: string,
@@ -416,8 +477,8 @@ export class ReportOverview {
 
   static demoList(): ReportOverview[] {
     return [
-      ReportOverview.create('demo-essay-1', 'prompt-growth-choice', '一次选择', '一次选择', '2026-07-06T00:00:00Z', 'analyzed', 84, 100, 'mock', 18),
-      ReportOverview.create('demo-essay-2', 'prompt-family-responsibility', '亲情与责任', '旧伞下的新路', '2026-07-05T00:00:00Z', 'analyzed', 87, 100, 'mock', 16)
+      ReportOverview.create('demo-essay-1', 'prompt-growth-choice', '一次选择', '一次选择', '2026-07-06T00:00:00Z', 'analyzed', 84, 100, 'local-nlp', 18),
+      ReportOverview.create('demo-essay-2', 'prompt-family-responsibility', '亲情与责任', '旧伞下的新路', '2026-07-05T00:00:00Z', 'analyzed', 87, 100, 'local-nlp', 16)
     ];
   }
 }

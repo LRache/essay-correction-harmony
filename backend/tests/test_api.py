@@ -13,10 +13,12 @@ def make_client(tmp_path: Path) -> TestClient:
         database_path=str(tmp_path / "test.db"),
         jwt_secret="test-secret",
         token_ttl_seconds=3600,
-        ai_provider="mock",
+        ai_provider="local-nlp",
         ai_base_url="",
         ai_api_key="",
-        ai_model="mock-test",
+        ai_model="openai-test",
+        local_bert_model="model-that-does-not-exist",
+        local_model_files_only=True,
     )
     return TestClient(create_app(settings))
 
@@ -36,6 +38,7 @@ def test_student_submit_analyze_and_teacher_review(tmp_path: Path) -> None:
         "/essays",
         headers={"Authorization": f"Bearer {student_token}"},
         json={
+            "prompt_id": "prompt-growth-choice",
             "title": "一次选择",
             "prompt": "请以成长中的一次选择为题写一篇作文。",
             "content": "那天我做出一个重要的的选择。首先我很犹豫，后来我明白成长需要承担责任。",
@@ -47,12 +50,12 @@ def test_student_submit_analyze_and_teacher_review(tmp_path: Path) -> None:
     job_response = client.post(
         f"/essays/{essay_id}/analysis-jobs",
         headers={"Authorization": f"Bearer {student_token}"},
-        json={"provider": "mock"},
+        json={"provider": "local-nlp"},
     )
     assert job_response.status_code == 200
     assert job_response.json()["status"] == "completed"
-    assert job_response.json()["provider"] == "mock"
-    assert job_response.json()["model"] == "mock-v1"
+    assert job_response.json()["provider"] == "local-nlp"
+    assert job_response.json()["model"] == "model-that-does-not-exist"
 
     report_response = client.get(
         f"/essays/{essay_id}/report",
@@ -84,6 +87,54 @@ def test_student_submit_analyze_and_teacher_review(tmp_path: Path) -> None:
     assert review_response.status_code == 200
     assert review_response.json()["score"] == 88
 
+    student_overview_response = client.get(
+        "/reports", headers={"Authorization": f"Bearer {student_token}"}
+    )
+    assert student_overview_response.status_code == 200
+    student_review = student_overview_response.json()[0]["teacher_review"]
+    assert student_review["score"] == 88
+    assert student_review["comment"] == "主题明确，建议补充更多细节。"
+
+
+def test_self_assigned_essay_only_creates_student_report(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    student_token = login(client, "student@example.com", "student123")
+    teacher_token = login(client, "teacher@example.com", "teacher123")
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    teacher_headers = {"Authorization": f"Bearer {teacher_token}"}
+
+    essay_response = client.post(
+        "/essays",
+        headers=student_headers,
+        json={
+            "title": "藏在细节里的温暖",
+            "prompt": "请以藏在细节里的温暖为题写一篇记叙文。",
+            "content": "清晨母亲把伞塞进我的手里，又蹲下来替我系好鞋带。后来我才明白温暖藏在这些细节里。",
+        },
+    )
+    assert essay_response.status_code == 200
+    essay_id = essay_response.json()["id"]
+    assert essay_response.json()["prompt_id"] is None
+
+    job_response = client.post(f"/essays/{essay_id}/analysis-jobs", headers=student_headers)
+    assert job_response.status_code == 200
+    assert job_response.json()["status"] == "completed"
+
+    report_response = client.get(f"/essays/{essay_id}/report", headers=student_headers)
+    assert report_response.status_code == 200
+    assert report_response.json()["essay_id"] == essay_id
+
+    teacher_list = client.get("/teacher/essays", headers=teacher_headers)
+    assert teacher_list.status_code == 200
+    assert all(item["essay"]["id"] != essay_id for item in teacher_list.json())
+
+    review_response = client.post(
+        f"/teacher/essays/{essay_id}/review",
+        headers=teacher_headers,
+        json={"score": 88, "comment": "这篇自拟作文不应进入老师批改。", "annotations": []},
+    )
+    assert review_response.status_code == 404
+
 
 def test_permissions_and_contract(tmp_path: Path) -> None:
     client = make_client(tmp_path)
@@ -96,6 +147,43 @@ def test_permissions_and_contract(tmp_path: Path) -> None:
     assert examples.status_code == 200
     first = examples.json()[0]
     assert {"id", "title", "prompt", "content", "theme", "highlights"}.issubset(first.keys())
+
+
+def test_teacher_creates_class_and_student_joins_with_invite_code(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    student_token = login(client, "student@example.com", "student123")
+    teacher_token = login(client, "teacher@example.com", "teacher123")
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    teacher_headers = {"Authorization": f"Bearer {teacher_token}"}
+
+    create_response = client.post("/classes", headers=teacher_headers, json={"name": "九年级一班"})
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["name"] == "九年级一班"
+    assert len(created["invite_code"]) >= 4
+    assert created["student_count"] == 0
+
+    join_response = client.post(
+        "/classes/join",
+        headers=student_headers,
+        json={"invite_code": created["invite_code"].lower()},
+    )
+    assert join_response.status_code == 200
+    joined = join_response.json()
+    assert joined["id"] == created["id"]
+    assert joined["student_count"] == 1
+
+    student_classes = client.get("/classes", headers=student_headers)
+    assert student_classes.status_code == 200
+    assert any(item["id"] == created["id"] for item in student_classes.json())
+
+    teacher_classes = client.get("/classes", headers=teacher_headers)
+    assert teacher_classes.status_code == 200
+    assert any(item["id"] == created["id"] and item["student_count"] == 1 for item in teacher_classes.json())
+
+    students = client.get(f"/classes/{created['id']}/students", headers=teacher_headers)
+    assert students.status_code == 200
+    assert students.json()[0]["username"] == "student@example.com"
 
 
 def test_student_report_overviews_can_list_multiple_reports(tmp_path: Path) -> None:

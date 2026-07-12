@@ -1,6 +1,9 @@
 import http from '@ohos.net.http';
 import {
   AnalysisJobOut,
+  ClassCreatePayload,
+  ClassJoinPayload,
+  ClassOut,
   AnalysisJobCreatePayload,
   AnalysisReport,
   EssayCreatePayload,
@@ -9,6 +12,7 @@ import {
   LoginPayload,
   LoginResponse,
   ReportOverview,
+  RewriteSuggestion,
   TeacherEssayOut,
   TeacherReviewOut,
   TeacherReviewPayload,
@@ -21,9 +25,11 @@ export class ApiClient {
   static authToken: string = '';
   static localWritingPrompts: WritingPromptOut[] = [];
   static localReportOverviews: ReportOverview[] = [];
+  static localClasses: ClassOut[] = [];
 
   static logout(): void {
     ApiClient.authToken = '';
+    ApiClient.localClasses = [];
   }
 
   static async login(username: string, password: string): Promise<LoginResponse> {
@@ -53,6 +59,49 @@ export class ApiClient {
     const created = JSON.parse(raw) as WritingPromptOut;
     ApiClient.cacheWritingPrompt(created);
     return created;
+  }
+
+  static async listClasses(): Promise<ClassOut[]> {
+    const raw: string = await ApiClient.request('/classes', http.RequestMethod.GET, undefined, ApiClient.authToken);
+    const fetched = JSON.parse(raw) as ClassOut[];
+    ApiClient.localClasses = ApiClient.mergeClasses(fetched, ApiClient.localClasses);
+    return ApiClient.localClasses;
+  }
+
+  static async createClass(name: string): Promise<ClassOut> {
+    const payload: ClassCreatePayload = ClassCreatePayload.create(name);
+    const raw: string = await ApiClient.request('/classes', http.RequestMethod.POST, payload, ApiClient.authToken);
+    const created = JSON.parse(raw) as ClassOut;
+    ApiClient.localClasses = ApiClient.mergeClasses([created], ApiClient.localClasses);
+    return created;
+  }
+
+  static async joinClass(inviteCode: string): Promise<ClassOut> {
+    const payload: ClassJoinPayload = ClassJoinPayload.create(inviteCode);
+    const raw: string = await ApiClient.request('/classes/join', http.RequestMethod.POST, payload, ApiClient.authToken);
+    const joined = JSON.parse(raw) as ClassOut;
+    ApiClient.localClasses = ApiClient.mergeClasses([joined], ApiClient.localClasses);
+    return joined;
+  }
+
+  private static mergeClasses(primary: ClassOut[], secondary: ClassOut[]): ClassOut[] {
+    const next: ClassOut[] = [];
+    for (let index = 0; index < primary.length; index++) {
+      next.push(primary[index]);
+    }
+    for (let index = 0; index < secondary.length; index++) {
+      const item: ClassOut = secondary[index];
+      let exists: boolean = false;
+      for (let foundIndex = 0; foundIndex < next.length; foundIndex++) {
+        if (next[foundIndex].id === item.id) {
+          exists = true;
+        }
+      }
+      if (!exists) {
+        next.push(item);
+      }
+    }
+    return next;
   }
 
   static cacheWritingPrompt(item: WritingPromptOut): void {
@@ -90,12 +139,54 @@ export class ApiClient {
 
   static async getReport(essayId: string): Promise<AnalysisReport> {
     const raw: string = await ApiClient.request(`/essays/${essayId}/report`, http.RequestMethod.GET, undefined, ApiClient.authToken);
-    return JSON.parse(raw) as AnalysisReport;
+    const report = JSON.parse(raw) as AnalysisReport;
+    if (report.suggestions === undefined) {
+      report.suggestions = [];
+    }
+    const cleanedSuggestions: RewriteSuggestion[] = [];
+    for (let index = 0; index < report.suggestions.length; index++) {
+      const item: RewriteSuggestion = report.suggestions[index];
+      const original: string = (item.original ?? '').trim();
+      const rewrite: string = (item.rewrite ?? '').trim();
+      const rationale: string = (item.rationale ?? '').trim();
+      const issueText: string = (item.issue_text ?? '').trim();
+      const paragraphIndex: number = item.paragraph_index ?? 0;
+      const sentenceIndex: number = item.sentence_index ?? 0;
+      const start: number = item.start ?? -1;
+      const end: number = item.end ?? -1;
+      const isGeneric: boolean = rationale.indexOf('结合上下文检查') >= 0 ||
+        rationale.indexOf('检查词语搭配、成分完整性或语序') >= 0 ||
+        rationale.indexOf('并重点核实该处') >= 0;
+      const hasReliableLocation: boolean = paragraphIndex > 0 && sentenceIndex > 0 &&
+        start >= 0 && end > start && issueText.length > 0;
+      const isCompleteRewrite: boolean = original.length >= 4 && rewrite.length >= 4;
+      if (!hasReliableLocation || !isCompleteRewrite || original === rewrite || rationale.length < 6 || isGeneric) {
+        continue;
+      }
+      item.original = original;
+      item.rewrite = rewrite;
+      item.rationale = rationale;
+      item.improvement = (item.improvement ?? '').trim();
+      if (item.improvement.length === 0) {
+        item.improvement = '修改后语句表达更准确，结构更清楚。';
+      }
+      item.issue_text = issueText;
+      item.paragraph_index = paragraphIndex;
+      item.sentence_index = sentenceIndex;
+      item.start = start;
+      item.end = end;
+      cleanedSuggestions.push(item);
+    }
+    report.suggestions = cleanedSuggestions;
+    return report;
   }
 
   static async listReportOverviews(): Promise<ReportOverview[]> {
     const raw: string = await ApiClient.request('/reports', http.RequestMethod.GET, undefined, ApiClient.authToken);
     const fetched = JSON.parse(raw) as ReportOverview[];
+    for (let index = 0; index < fetched.length; index++) {
+      fetched[index].teacher_review = fetched[index].teacher_review ?? undefined;
+    }
     ApiClient.localReportOverviews = ApiClient.mergeReportOverviews(fetched, ApiClient.localReportOverviews);
     return ApiClient.localReportOverviews;
   }
@@ -156,7 +247,10 @@ export class ApiClient {
       expectDataType: http.HttpDataType.STRING,
       // Real LLM correction is synchronous on the backend and commonly takes
       // longer than a normal CRUD request.
-      readTimeout: 60000,
+      // Backend allows the external model up to 60 seconds. Keep the client
+      // timeout slightly longer so it can receive either the result or the
+      // backend's local-BERT fallback response.
+      readTimeout: 90000,
       connectTimeout: 10000,
       usingCache: false
     };

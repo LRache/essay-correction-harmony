@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from .schemas import AnalysisJobOut, EssayOut, ExampleOut, TeacherReviewOut, WritingPromptOut
+from .schemas import AnalysisJobOut, ClassMemberOut, ClassOut, EssayOut, ExampleOut, TeacherReviewOut, WritingPromptOut
 
 
 def essay_from_row(row: sqlite3.Row) -> EssayOut:
@@ -28,6 +28,27 @@ def writing_prompt_from_row(row: sqlite3.Row) -> WritingPromptOut:
         created_by=row["created_by"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def class_from_row(row: sqlite3.Row) -> ClassOut:
+    return ClassOut(
+        id=row["id"],
+        name=row["name"],
+        invite_code=row["invite_code"],
+        teacher_id=row["teacher_id"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        student_count=row["student_count"] if "student_count" in row.keys() else 0,
+    )
+
+
+def class_member_from_row(row: sqlite3.Row) -> ClassMemberOut:
+    return ClassMemberOut(
+        id=row["id"],
+        username=row["username"],
+        display_name=row["display_name"],
+        joined_at=row["joined_at"],
     )
 
 

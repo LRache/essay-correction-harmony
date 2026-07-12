@@ -1,42 +1,61 @@
-# essay-correction-harmony
+# 智能作文批改与辅导系统
 
-中文作文智能批改鸿蒙 App 首版原型，包含：
+本项目是一套面向中文作文教学的智能批改系统，包含 HarmonyOS ArkTS 客户端以及 FastAPI 后端。
 
-- `backend/`: FastAPI + SQLite 后端，提供学生提交、机器批改占位链路、范文、教师人工批改接口。
-- `harmony/EssayCorrection/`: HarmonyOS ArkTS 页面壳，包含登录、作文提交、批改报告、范文参考、教师批改管理。
+系统支持两种批改方式：
 
-## Backend
+- `local-nlp`：使用 NLTK 检测语法问题，并通过 Hugging Face 中文 BERT 分析文章连贯性、主题相关性和作文评分。
+- `openai-compatible`：调用 Moonshot 等兼容 OpenAI 接口的外部大模型。
+
+## 项目结构
+
+- `backend/`：FastAPI + SQLite 后端，包含用户登录、作文提交、智能分析、优秀范文、教师人工批改接口和模型评测工具。
+- `harmony/EssayCorrection/`：HarmonyOS ArkTS 客户端，包含学生提交、报告查看、范文参考和教师批改管理。
+
+## 启动后端
 
 ```bash
 cd backend
-UV_CACHE_DIR="$PWD/.cache/uv" uv sync --extra dev
-UV_CACHE_DIR="$PWD/.cache/uv" uv run pytest -q
-UV_CACHE_DIR="$PWD/.cache/uv" uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv sync --extra ai --extra dev
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+启动后可访问：
+
+- API 文档：`http://127.0.0.1:8000/docs`
+- 健康检查：`http://127.0.0.1:8000/health`
 
 默认账号：
 
 - 学生：`student@example.com` / `student123`
 - 教师：`teacher@example.com` / `teacher123`
 
-AI 接入预留环境变量：
+## 配置外接 API
 
-```bash
+复制 `backend/.env.example` 为 `backend/.env`，然后填写：
+
+```dotenv
 AI_PROVIDER=openai-compatible
 AI_BASE_URL=https://api.example.com/v1
-AI_API_KEY=...
-AI_MODEL=...
+AI_API_KEY=你的密钥
+AI_MODEL=模型名称
 ```
 
-未配置 AI 时默认使用 deterministic mock + 轻量规则分析。
+外接 API 与本地 NLTK/BERT 功能相互独立，可以在客户端中自由选择。
 
-## Harmony
+## 运行测试
 
 ```bash
-cd harmony/EssayCorrection
-DEVECO_HOME=/Applications/DevEco-Studio.app/Contents \
-DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk \
-/Applications/DevEco-Studio.app/Contents/tools/hvigor/bin/hvigorw assembleApp --no-daemon
+cd backend
+uv run pytest -q
 ```
 
-ArkTS 端默认请求 `http://127.0.0.1:8000`。后端不可用时会回退到本地演示数据，方便先看页面闭环。
+本地模型、公开语料和量化评测的详细说明见 `backend/README.md`。
+
+## HarmonyOS 客户端
+
+使用 DevEco Studio 打开 `harmony/EssayCorrection`，根据电脑当前局域网地址修改：
+
+`entry/src/main/ets/service/ApiClient.ets` 中的 `ApiClient.baseUrl`。
+
+真机必须与后端电脑处于可互通的网络中。修改地址后重新编译并安装应用。

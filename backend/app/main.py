@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .analysis import build_provider
 from .config import Settings, load_settings
 from .db import Database
-from .routes import auth, essays, examples, teacher
+from .routes import auth, classes, essays, examples, teacher
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -18,6 +18,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.db = db
     app.state.analysis_provider = build_provider(app_settings)
+    app.state.analysis_providers = {app_settings.ai_provider: app.state.analysis_provider}
 
     app.add_middleware(
         CORSMiddleware,
@@ -32,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth.router)
+    app.include_router(classes.router)
     app.include_router(essays.router)
     app.include_router(examples.router)
     app.include_router(teacher.router)
@@ -39,4 +41,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
-

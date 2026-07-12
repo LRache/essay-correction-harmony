@@ -49,6 +49,23 @@ class Database:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS classes (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  invite_code TEXT UNIQUE NOT NULL,
+                  teacher_id TEXT NOT NULL REFERENCES users(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS class_members (
+                  id TEXT PRIMARY KEY,
+                  class_id TEXT NOT NULL REFERENCES classes(id),
+                  student_id TEXT NOT NULL REFERENCES users(id),
+                  joined_at TEXT NOT NULL,
+                  UNIQUE(class_id, student_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS essays (
                   id TEXT PRIMARY KEY,
                   prompt_id TEXT,
@@ -138,6 +155,31 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 rows,
+            )
+
+        class_count = conn.execute("SELECT COUNT(*) AS count FROM classes").fetchone()["count"]
+        teacher_exists = conn.execute("SELECT id FROM users WHERE id = ?", ("teacher-1",)).fetchone() is not None
+        student_exists = conn.execute("SELECT id FROM users WHERE id = ?", ("student-1",)).fetchone() is not None
+        if class_count == 0 and teacher_exists:
+            now = utc_now()
+            conn.execute(
+                """
+                INSERT INTO classes(id, name, invite_code, teacher_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("class-demo-1", "演示班级", "CLASS2026", "teacher-1", now, now),
+            )
+
+        member_count = conn.execute("SELECT COUNT(*) AS count FROM class_members").fetchone()["count"]
+        demo_class_exists = conn.execute("SELECT id FROM classes WHERE id = ?", ("class-demo-1",)).fetchone() is not None
+        if member_count == 0 and demo_class_exists and student_exists:
+            now = utc_now()
+            conn.execute(
+                """
+                INSERT INTO class_members(id, class_id, student_id, joined_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("class-member-demo-1", "class-demo-1", "student-1", now),
             )
 
         prompt_count = conn.execute("SELECT COUNT(*) AS count FROM writing_prompts").fetchone()["count"]

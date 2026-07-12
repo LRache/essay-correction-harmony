@@ -12,6 +12,24 @@ from ..serializers import essay_from_row, job_from_row, review_from_row, writing
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 
 
+def _load_class_essay_or_404(db: Database, essay_id: str, teacher_id: str):
+    row = db.one(
+        """
+        SELECT e.*
+        FROM essays e
+        JOIN writing_prompts wp ON wp.id = e.prompt_id
+        JOIN class_members cm ON cm.student_id = e.student_id
+        JOIN classes c ON c.id = cm.class_id
+        WHERE e.id = ? AND c.teacher_id = ? AND wp.created_by = ?
+        LIMIT 1
+        """,
+        (essay_id, teacher_id, teacher_id),
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Essay not found")
+    return row
+
+
 @router.post("/prompts", response_model=WritingPromptOut)
 def create_writing_prompt(
     payload: WritingPromptCreate,
@@ -36,9 +54,20 @@ def create_writing_prompt(
 @router.get("/essays", response_model=list[TeacherEssayOut])
 def list_teacher_essays(
     db: Database = Depends(get_db),
-    _: UserOut = Depends(teacher_user),
+    user: UserOut = Depends(teacher_user),
 ) -> list[TeacherEssayOut]:
-    rows = db.all("SELECT * FROM essays ORDER BY created_at DESC")
+    rows = db.all(
+        """
+        SELECT DISTINCT e.*
+        FROM essays e
+        JOIN writing_prompts wp ON wp.id = e.prompt_id
+        JOIN class_members cm ON cm.student_id = e.student_id
+        JOIN classes c ON c.id = cm.class_id
+        WHERE c.teacher_id = ? AND wp.created_by = ?
+        ORDER BY e.created_at DESC
+        """,
+        (user.id, user.id),
+    )
     result: list[TeacherEssayOut] = []
     for row in rows:
         essay = essay_from_row(row)
@@ -63,9 +92,7 @@ def review_essay(
     db: Database = Depends(get_db),
     user: UserOut = Depends(teacher_user),
 ) -> TeacherReviewOut:
-    essay_row = db.one("SELECT id FROM essays WHERE id = ?", (essay_id,))
-    if essay_row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Essay not found")
+    _load_class_essay_or_404(db, essay_id, user.id)
 
     now = utc_now()
     existing = db.one("SELECT * FROM teacher_reviews WHERE essay_id = ?", (essay_id,))
